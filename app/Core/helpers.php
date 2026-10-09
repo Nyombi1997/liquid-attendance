@@ -81,8 +81,8 @@ function day_short(string $date): string
     return $jours[(int) date('N', $ts)] . ' ' . date('d/m', $ts);
 }
 
-/** Libellé et classe CSS des statuts de journée. */
-function status_badge(string $status): string
+/** Libellé et classe CSS (badge-…) d'un statut de journée. */
+function status_info(string $status): array
 {
     $map = [
         'present'          => ['Présent', 'ok'],
@@ -93,8 +93,34 @@ function status_badge(string $status): string
         'repos'            => ['Repos', 'muted'],
         'hors_horaire'     => ['Hors horaire', 'info'],
     ];
-    [$label, $class] = $map[$status] ?? [$status, 'muted'];
+    return $map[$status] ?? [$status, 'muted'];
+}
+
+function status_badge(string $status): string
+{
+    [$label, $class] = status_info($status);
     return '<span class="badge badge-' . $class . '">' . e($label) . '</span>';
+}
+
+/** Retard affiché dans les tableaux : « 16 min » ou « — ». */
+function late_label(int $minutes): string
+{
+    return $minutes > 0 ? $minutes . ' min' : '—';
+}
+
+/** « il y a 12 s », « il y a 5 min », « il y a 2 h », puis la date. */
+function ago_label(?string $datetime): string
+{
+    if (!$datetime) {
+        return '—';
+    }
+    $s = max(0, time() - strtotime($datetime));
+    return match (true) {
+        $s < 60    => 'il y a ' . $s . ' s',
+        $s < 3600  => 'il y a ' . intdiv($s, 60) . ' min',
+        $s < 86400 => 'il y a ' . intdiv($s, 3600) . ' h',
+        default    => 'le ' . date('d/m à H:i', strtotime($datetime)),
+    };
 }
 
 function initials(string $name): string

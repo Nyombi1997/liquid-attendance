@@ -1,5 +1,5 @@
 // Service worker : rend l'application installable et affiche une page
-// hors ligne. Les données ne sont jamais mises en cache (toujours à jour).
+// hors ligne. Les pages et /api/ ne sont jamais mises en cache (toujours à jour).
 //
 // Fichiers statiques : les pages les appellent avec « ?v=<date de modification> »
 // (helper PHP asset()). Une URL versionnée ne change jamais de contenu : elle
@@ -53,6 +53,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
+  // Données en direct (/api/) : toujours le réseau, jamais de cache
+  if (url.pathname.startsWith('/api/')) return;
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).catch(() => caches.match('/offline.html')));
     return;

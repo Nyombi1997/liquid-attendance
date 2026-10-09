@@ -1,4 +1,4 @@
-<div class="page-head">
+<div class="page-head" data-live="devices" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e(date('Y-m-d')) ?>">
   <div>
     <h1>Pointeuses</h1>
     <p class="muted">Badges reçus en temps réel, synchronisation complète toutes les 30 minutes. Rien n'est effacé ni modifié sur les appareils, sauf l'horloge, remise à l'heure de la plateforme chaque nuit à 03:00.</p>
@@ -15,20 +15,20 @@
       $ok = (int) $d['last_sync_ok'] === 1;
       $offset = $d['clock_offset_sec'] !== null ? (int) $d['clock_offset_sec'] : null;
       $event = $d['last_event_at'] ?? null; ?>
-      <tr class="<?= $d['active'] ? '' : 'is-muted' ?>">
+      <tr class="<?= $d['active'] ? '' : 'is-muted' ?>" data-device-id="<?= (int) $d['id'] ?>">
         <td><strong><?= e($d['name']) ?></strong><small class="muted block"><?= e($d['ip']) ?>:<?= (int) $d['port'] ?></small></td>
         <td><?= e($d['office']) ?></td>
         <td><?= $d['usage_type'] === 'acces' ? '<span class="tag">Accès salle</span>' : ($d['direction'] === 'entree' ? 'Entrée' : 'Sortie') ?></td>
         <td class="muted"><?= e($d['model'] ?? '—') ?><small class="block"><?= e($d['serial_number'] ?? '') ?></small></td>
-        <td>
+        <td data-col="sync">
           <?php if (!$d['last_sync_at']): ?><span class="badge badge-muted">En attente</span>
           <?php elseif ($ok): ?><span class="badge badge-ok">OK</span> <small class="muted"><?= e(date('d/m H:i', strtotime($d['last_sync_at']))) ?></small>
           <?php else: ?><span class="badge badge-danger">Erreur</span> <small class="muted block"><?= e($d['last_error']) ?></small><?php endif; ?>
         </td>
-        <td class="nowrap"><?php if (!$event): ?><span class="muted">—</span>
-          <?php elseif (substr($event, 0, 10) === date('Y-m-d')): ?><?= e(substr($event, 11, 8)) ?>
-          <?php else: ?><span class="muted"><?= e(date('d/m H:i', strtotime($event))) ?></span><?php endif; ?></td>
-        <td><?php if ($offset === null): ?>—<?php elseif (abs($offset) <= 60): ?><span class="text-ok">à l'heure</span><?php else: ?><span class="badge badge-warn"><?= $offset > 0 ? 'avance' : 'retard' ?> de <?= abs($offset) >= 120 ? round(abs($offset) / 60) . ' min' : abs($offset) . ' s' ?></span><?php endif; ?></td>
+        <td class="nowrap" data-col="event">
+          <span class="listening" data-listening<?= $d['live_since'] ?? null ? '' : ' hidden' ?>><span class="live-dot"></span>en écoute</span>
+          <span class="block<?= $event ? '' : ' muted' ?>" data-ago="<?= e($event ?? '') ?>"><?= e(ago_label($event)) ?></span></td>
+        <td class="nowrap" data-col="clock"><?php if ($offset === null): ?>—<?php elseif (abs($offset) <= 60): ?><span class="text-ok">à l'heure</span><?php else: ?><span class="badge badge-warn"><?= $offset > 0 ? 'avance' : 'retard' ?> de <?= abs($offset) >= 120 ? round(abs($offset) / 60) . ' min' : abs($offset) . ' s' ?></span><?php endif; ?></td>
         <td class="num"><?= e($d['user_count'] ?? '—') ?></td>
         <td class="num"><?= $d['log_count'] !== null ? number_format((int) $d['log_count'], 0, ',', ' ') : '—' ?></td>
         <td class="actions"><?php if (can('admin')): ?><button class="btn btn-ghost btn-sm" type="button" data-dialog="device-<?= (int) $d['id'] ?>">Modifier</button><?php endif; ?></td>

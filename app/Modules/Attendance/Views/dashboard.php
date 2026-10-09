@@ -1,5 +1,5 @@
 <?php
-$rate = $expected > 0 ? round($arrived / $expected * 100) : 0;
+$rate = $kpis['rate'];
 // Graphique : barres empilées sur 14 jours (SVG généré côté serveur)
 $max = max(1, ...array_map(fn($d) => array_sum($d), array_values($trend)));
 $w = 640; $h = 200; $pad = 28; $n = count($trend);
@@ -7,10 +7,10 @@ $slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
 $series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
 $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 ?>
-<div class="page-head" data-auto-refresh="30">
+<div class="page-head" data-live="dashboard" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($today) ?>">
   <div>
     <h1>Tableau de bord</h1>
-    <p class="muted">Présence de <?= e(date_fr($today)) ?>, mise à jour en temps réel (page actualisée toutes les 30 secondes).</p>
+    <p class="muted">Présence de <?= e(date_fr($today)) ?>, mise à jour en direct à chaque badge.</p>
   </div>
   <a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a>
 </div>
@@ -18,23 +18,23 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 <div class="kpis">
   <div class="kpi kpi-primary">
     <span class="kpi-label">Présents aujourd'hui</span>
-    <strong class="kpi-value"><?= $arrived ?><small> / <?= $expected ?></small></strong>
-    <div class="meter" role="img" aria-label="<?= $rate ?> % des agents attendus"><svg viewBox="0 0 100 6" preserveAspectRatio="none"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-fill" width="<?= min(100, $rate) ?>" height="6" rx="3"/></svg></div>
-    <span class="kpi-foot"><?= $rate ?> % des agents attendus</span>
+    <strong class="kpi-value"><span data-kpi="arrived"><?= $kpis['arrived'] ?></span><small> / <span data-kpi="expected"><?= $kpis['expected'] ?></span></small></strong>
+    <div class="meter" role="img" data-kpi-meter aria-label="<?= $rate ?> % des agents attendus"><svg viewBox="0 0 100 6" preserveAspectRatio="none"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-fill" width="<?= min(100, $rate) ?>" height="6" rx="3"/></svg></div>
+    <span class="kpi-foot"><span data-kpi="rate"><?= $rate ?></span> % des agents attendus</span>
   </div>
   <a class="kpi" href="/presence?status=retard">
     <span class="kpi-label">Retards</span>
-    <strong class="kpi-value"><?= $late ?></strong>
+    <strong class="kpi-value" data-kpi="late"><?= $kpis['late'] ?></strong>
     <span class="kpi-foot">au-delà de la tolérance</span>
   </a>
   <a class="kpi" href="/presence?status=absent">
     <span class="kpi-label">Absents</span>
-    <strong class="kpi-value"><?= $absent ?></strong>
+    <strong class="kpi-value" data-kpi="absent"><?= $kpis['absent'] ?></strong>
     <span class="kpi-foot">aucun pointage d'entrée</span>
   </a>
   <a class="kpi kpi-accent" href="/corrections">
     <span class="kpi-label">Sorties manquantes</span>
-    <strong class="kpi-value"><?= $pending ?></strong>
+    <strong class="kpi-value" data-kpi="pending"><?= $kpis['pending'] ?></strong>
     <span class="kpi-foot">à corriger (30 derniers jours)</span>
   </a>
 </div>
@@ -66,12 +66,10 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
   <section class="card">
     <div class="card-head"><h2>Retards du jour</h2><a class="link" href="/presence?status=retard">Tous</a></div>
-    <?php if (!$lates): ?>
-      <p class="muted empty-line">Aucun retard pour l'instant.</p>
-    <?php endif; ?>
-    <ul class="list">
+    <p class="muted empty-line" data-lates-empty<?= $lates ? ' hidden' : '' ?>>Aucun retard pour l'instant.</p>
+    <ul class="list" data-lates>
       <?php foreach ($lates as $l): ?>
-        <li><a href="/employes/<?= (int) $l['id'] ?>" class="list-item">
+        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="/employes/<?= (int) $l['id'] ?>" class="list-item">
           <span class="avatar avatar-sm"><?= e(initials($l['name'])) ?></span>
           <span class="list-main"><strong><?= e($l['name']) ?></strong><small><?= e($l['group_name'] ?? 'Sans groupe') ?> · arrivé à <?= e(time_label($l['first_in'])) ?></small></span>
           <span class="badge badge-warn">+<?= (int) $l['late_minutes'] ?> min</span>
@@ -84,29 +82,29 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 <div class="grid-2">
   <section class="card">
     <div class="card-head"><h2>Derniers pointages</h2><a class="link" href="/acces">Accès aux salles</a></div>
-    <ul class="list">
+    <ul class="list" data-punches>
       <?php foreach ($punches as $p): ?>
-        <li class="list-item">
+        <li class="list-item" data-punched-at="<?= e($p['punched_at']) ?>" data-punch-id="<?= (int) $p['id'] ?>">
           <span class="dir dir-<?= e($p['usage_type'] === 'acces' ? 'acces' : $p['direction']) ?>"><?= icon($p['usage_type'] === 'acces' ? 'door' : ($p['direction'] === 'entree' ? 'arrow-in' : 'arrow-out')) ?></span>
           <span class="list-main"><strong><?= e($p['employee']) ?></strong><small><?= e($p['device']) ?></small></span>
           <span class="time"><?= e(date('d/m H:i', strtotime($p['punched_at']))) ?></span>
         </li>
       <?php endforeach; ?>
-      <?php if (!$punches): ?><li class="muted empty-line">Aucun pointage importé pour l'instant.</li><?php endif; ?>
+      <?php if (!$punches): ?><li class="muted empty-line" data-punches-empty>Aucun pointage importé pour l'instant.</li><?php endif; ?>
     </ul>
   </section>
 
   <section class="card">
     <div class="card-head"><h2>Pointeuses</h2><a class="link" href="/pointeuses">Détails</a></div>
-    <ul class="list">
+    <ul class="list" data-devices>
       <?php foreach ($devices as $d):
         $ok = $d['last_sync_ok'] === 1 || $d['last_sync_ok'] === '1';
         $drift = $d['clock_offset_sec'] !== null && abs((int) $d['clock_offset_sec']) > 60; ?>
-        <li class="list-item">
-          <span class="dot <?= $d['last_sync_at'] === null ? 'dot-muted' : ($ok ? 'dot-ok' : 'dot-danger') ?>"></span>
-          <span class="list-main"><strong><?= e($d['name']) ?></strong><small><?= e($d['ip']) ?> · <?= $d['last_sync_at'] ? 'synchronisée à ' . e(date('H:i', strtotime($d['last_sync_at']))) : 'jamais synchronisée' ?></small></span>
-          <?php if ($drift): ?><span class="badge badge-warn">Horloge <?= (int) $d['clock_offset_sec'] > 0 ? '+' : '' ?><?= (int) $d['clock_offset_sec'] ?> s</span><?php endif; ?>
-          <?php if (!$ok && $d['last_sync_at']): ?><span class="badge badge-danger">Injoignable</span><?php endif; ?>
+        <li class="list-item" data-device-id="<?= (int) $d['id'] ?>" data-device-ip="<?= e($d['ip']) ?>">
+          <span class="dot <?= $d['last_sync_at'] === null ? 'dot-muted' : ($ok ? 'dot-ok' : 'dot-danger') ?>" data-device-dot></span>
+          <span class="list-main"><strong><?= e($d['name']) ?></strong><small data-device-sync><?= e($d['ip']) ?> · <?= $d['last_sync_at'] ? 'synchronisée à ' . e(date('H:i', strtotime($d['last_sync_at']))) : 'jamais synchronisée' ?></small></span>
+          <span class="badge badge-warn" data-device-drift<?= $drift ? '' : ' hidden' ?>>Horloge <?= (int) $d['clock_offset_sec'] > 0 ? '+' : '' ?><?= (int) $d['clock_offset_sec'] ?> s</span>
+          <span class="badge badge-danger" data-device-down<?= !$ok && $d['last_sync_at'] ? '' : ' hidden' ?>>Injoignable</span>
         </li>
       <?php endforeach; ?>
     </ul>

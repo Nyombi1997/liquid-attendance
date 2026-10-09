@@ -60,17 +60,26 @@ final class AttendanceComputer
             $corrections[$c['employee_id'] . '|' . $c['work_date']] = $c['corrected_out'];
         }
 
+        // computed_at ne change que si le résultat change (comparé avant la
+        // mise à jour : MariaDB applique les affectations dans l'ordre) :
+        // /api/direct ne renvoie ainsi que les journées réellement modifiées.
         $pdo = Database::pdo();
         $upsert = $pdo->prepare(
             'INSERT INTO attendance_days
                 (employee_id, work_date, schedule_id, expected_start, expected_end, first_in, last_out,
                  worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status, computed_at)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW())
-             ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id), expected_start = VALUES(expected_start),
+             ON DUPLICATE KEY UPDATE
+                computed_at = IF(schedule_id <=> VALUES(schedule_id) AND expected_start <=> VALUES(expected_start)
+                    AND expected_end <=> VALUES(expected_end) AND first_in <=> VALUES(first_in)
+                    AND last_out <=> VALUES(last_out) AND worked_minutes = VALUES(worked_minutes)
+                    AND late_minutes = VALUES(late_minutes) AND early_leave_minutes = VALUES(early_leave_minutes)
+                    AND overtime_minutes = VALUES(overtime_minutes) AND status = VALUES(status), computed_at, NOW()),
+                schedule_id = VALUES(schedule_id), expected_start = VALUES(expected_start),
                 expected_end = VALUES(expected_end), first_in = VALUES(first_in), last_out = VALUES(last_out),
                 worked_minutes = VALUES(worked_minutes), late_minutes = VALUES(late_minutes),
                 early_leave_minutes = VALUES(early_leave_minutes), overtime_minutes = VALUES(overtime_minutes),
-                status = VALUES(status), computed_at = NOW()'
+                status = VALUES(status)'
         );
 
         $count = 0;

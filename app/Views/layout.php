@@ -80,6 +80,13 @@ if (can('admin')) {
         <input type="search" name="q" placeholder="Rechercher un employé…" aria-label="Rechercher un employé">
       </form>
       <div class="topbar-right">
+        <span class="live-status" data-live-status hidden role="status" aria-live="polite">
+          <span class="live-dot"></span><strong data-live-label>En direct</strong><small data-live-ago></small>
+        </span>
+        <label class="switch" data-live-notify hidden>
+          <input type="checkbox" data-live-notify-input>
+          <span class="switch-track" aria-hidden="true"></span><span class="switch-label">Notifications</span>
+        </label>
         <span class="today"><?= e(ucfirst(date_fr(date('Y-m-d')))) ?></span>
         <a class="user-chip" href="/profil">
           <span class="avatar"><?= e(initials($user['full_name'] ?? '?')) ?></span>

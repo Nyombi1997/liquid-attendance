@@ -6,10 +6,12 @@ place de pymysql. Le calcul PHP n'est pas lancé : les appels sont relevés.
 Vérifie : badges en direct, synchro complète sur la même connexion, sortie
 propre de live_capture, coupure et reconnexion avec délai croissant, une
 pointeuse en panne qui ne bloque pas les autres, désactivation, recalculs
-regroupés, remise à l'heure nocturne.
+regroupés (un appel au plus toutes les RECOMPUTE_EVERY s), calcul global dans
+un thread à part, indicateur « en écoute », remise à l'heure nocturne.
 """
 import json
 import os
+import signal
 import sys
 import threading
 import time
@@ -36,7 +38,7 @@ class FakeDB:
     def add_device(self, dev_id, ip, name, usage="presence"):
         self.devices[dev_id] = dict(id=dev_id, name=name, ip=ip, port=4370, comm_key=0, usage_type=usage, active=1,
                                     last_sync_ok=None, last_error=None, last_event_at=None, clock_offset_sec=None,
-                                    full_syncs=0)
+                                    live_since="ancien", full_syncs=0)
 
 
 class Error(Exception):
@@ -106,7 +108,15 @@ class Cursor:
                 dev.update(last_sync_ok=1, last_error=None, clock_offset_sec=p[0], full_syncs=dev["full_syncs"] + 1)
                 return 1
             if sql.startswith("UPDATE devices SET last_sync_at = NOW(), last_sync_ok = 0"):
-                d.devices[p[1]].update(last_sync_ok=0, last_error=p[0])
+                assert "live_since = NULL" in sql
+                d.devices[p[1]].update(last_sync_ok=0, last_error=p[0], live_since=None)
+                return 1
+            if sql.startswith("UPDATE devices SET live_since = NULL WHERE live_since IS NOT NULL"):
+                for dev in d.devices.values():
+                    dev["live_since"] = None
+                return 1
+            if sql.startswith("UPDATE devices SET live_since = "):
+                d.devices[p[0]]["live_since"] = datetime.now() if "NOW()" in sql else None
                 return 1
             if sql.startswith("UPDATE devices SET last_event_at"):
                 d.devices[p[0]]["last_event_at"] = datetime.now()
@@ -165,7 +175,22 @@ sync.RECOMPUTE_EVERY = 0.8
 sync.CLOCK_SET_AT = "off"
 
 COMPUTES = []
-sync.run_compute = lambda args: COMPUTES.append((time.monotonic(), list(args)))
+SLOW_GLOBAL = threading.Event()   # calcul global lent (doit ne pas bloquer les recalculs)
+FAIL_NEXT = threading.Event()     # prochain recalcul par agent en échec
+
+
+def fake_compute(args):
+    COMPUTES.append((time.monotonic(), list(args)))
+    if args[0].startswith("--days=") and SLOW_GLOBAL.is_set():
+        time.sleep(2.5)
+    if args[0].startswith("--employee-device-id=") and FAIL_NEXT.is_set():
+        FAIL_NEXT.clear()
+        return False
+    return True
+
+
+sync.run_compute = fake_compute
+per_agent_calls = lambda since=0: [(t, a) for t, a in COMPUTES[since:] if a[0].startswith("--employee-device-id=")]  # noqa: E731
 
 fail = 0
 
@@ -207,25 +232,15 @@ def test_clock_window():
         sync.now, sync.CLOCK_SET_AT = real_now, real_at
 
 
-def test_recompute_batching():
+def test_recompute_queue():
     r = sync.Recompute()
-    real = sync.RECOMPUTE_EVERY
-    sync.RECOMPUTE_EVERY = 0.3
-    try:
-        r.add("7", date(2026, 10, 9))
-        r.add("7", date(2026, 10, 9))
-        r.add("8", date(2026, 10, 8))
-        first = r.take_due()
-        r.add("7", date(2026, 10, 9))
-        too_soon = r.take_due()
-        time.sleep(0.35)
-        later = r.take_due()
-        check("recalculs regroupés (un appel pour plusieurs agents, veille incluse)",
-              first == (["7", "8"], date(2026, 10, 7), date(2026, 10, 9)), str(first))
-        check("au plus un recalcul par agent dans le délai", too_soon is None and later and later[0] == ["7"],
-              f"{too_soon} {later}")
-    finally:
-        sync.RECOMPUTE_EVERY = real
+    r.add("7", date(2026, 10, 9))
+    r.add("7", date(2026, 10, 9))
+    r.add("8", date(2026, 10, 8))
+    first = r.take()
+    check("file de recalcul : tous les agents en attente, veille incluse",
+          first == (["7", "8"], date(2026, 10, 7), date(2026, 10, 9)), str(first))
+    check("file vidée après lecture", r.take() is None and not r.wake.is_set())
 
 
 # -- Scénario complet (sync.main dans le thread principal) ---------------------
@@ -251,6 +266,10 @@ def scenario():
         check("historique importé", (1, "1", datetime(2026, 10, 8, 7, 55)) in DB.punches)
         check("premier calcul global après les premières synchros",
               wait_for(lambda: any(args == ["--days=7"] for _, args in COMPUTES)), str(COMPUTES))
+        check("écoute en direct signalée (live_since), ancien état effacé au démarrage",
+              wait_for(lambda: isinstance(DB.devices[1]["live_since"], datetime)
+                       and isinstance(DB.devices[2]["live_since"], datetime), 2)
+              and DB.devices[5]["live_since"] is None, str({k: v["live_since"] for k, v in DB.devices.items()}))
 
         # Badges en direct, dont un agent inconnu
         n0 = len(COMPUTES)
@@ -261,23 +280,48 @@ def scenario():
         check("agent inconnu créé au badge", wait_for(lambda: "99" in DB.employees, 2)
               and DB.employees["99"]["name"] == "Agent 99")
         check("dernier badge reçu (last_event_at)", DB.devices[1]["last_event_at"] is not None)
-        check("recalcul de l'agent demandé",
-              wait_for(lambda: any(a_[0].startswith("--employee-device-id=") for _, a_ in COMPUTES[n0:]), 3),
+        check("recalcul demandé dans le délai (RECOMPUTE_EVERY)",
+              wait_for(lambda: {"1", "99"} <= {u for _, a_ in per_agent_calls(n0) for u in a_[0].split("=")[1].split(",")},
+                       sync.RECOMPUTE_EVERY + 0.5),
               str(COMPUTES[n0:]))
-        per_agent = [a_ for _, a_ in COMPUTES[n0:] if a_[0].startswith("--employee-device-id=")]
-        check("recalcul : bons agents et bonne période",
-              per_agent and set(per_agent[0][0].split("=")[1].split(",")) == {"1", "99"}
-              and per_agent[0][1] == f"--from={t1.date() - timedelta(days=1):%Y-%m-%d}"
-              and per_agent[0][2] == f"--to={t1.date():%Y-%m-%d}", str(per_agent))
+        per_agent = [a_ for _, a_ in per_agent_calls(n0)]
+        check("recalcul : veille et jour même",
+              per_agent and per_agent[0][1] == f"--from={t1.date() - timedelta(days=1):%Y-%m-%d}"
+              and per_agent[-1][2] == f"--to={t1.date():%Y-%m-%d}", str(per_agent))
 
-        # Rafale du même agent : pas plus d'un recalcul par délai
+        # Rafale de badges (plusieurs agents) : au plus un appel PHP par délai
+        time.sleep(sync.RECOMPUTE_EVERY)
         n1 = len(COMPUTES)
-        for i in range(5):
-            a.badge("1", t1 + timedelta(seconds=i + 1))
-            time.sleep(0.05)
-        time.sleep(sync.RECOMPUTE_EVERY * 1.6)
-        calls = [a_ for _, a_ in COMPUTES[n1:] if a_[0] == "--employee-device-id=1"]
-        check("rafale de badges regroupée", 1 <= len(calls) <= 2, str(calls))
+        for i in range(8):
+            a.badge(str(1 + i % 3), t1 + timedelta(seconds=i + 1))
+            time.sleep(0.1)
+        time.sleep(sync.RECOMPUTE_EVERY * 1.5)
+        calls = per_agent_calls(n1)
+        gaps = [round(y[0] - x[0], 2) for x, y in zip(calls, calls[1:])]
+        agents = {u for _, a_ in calls for u in a_[0].split("=")[1].split(",")}
+        check("rafale regroupée : un appel au plus par délai, tous les agents",
+              1 <= len(calls) <= 3 and all(g >= sync.RECOMPUTE_EVERY - 0.05 for g in gaps) and agents == {"1", "2", "3"},
+              f"{len(calls)} appels, écarts {gaps}, agents {agents}")
+
+        # Calcul global lent : les recalculs par agent continuent (thread à part)
+        SLOW_GLOBAL.set()
+        n2 = len(COMPUTES)
+        check("calcul global lancé", wait_for(lambda: any(a_[0] == "--days=7" for _, a_ in COMPUTES[n2:]), 3))
+        time.sleep(0.1)
+        a.badge("2", t1 + timedelta(seconds=20))
+        check("recalcul rapide pendant un calcul global lent",
+              wait_for(lambda: any(a_[0] == "--employee-device-id=2" for _, a_ in per_agent_calls(n2)),
+                       sync.RECOMPUTE_EVERY + 1.0), str(COMPUTES[n2:]))
+        SLOW_GLOBAL.clear()
+
+        # Recalcul en échec : les agents repartent dans la file
+        time.sleep(sync.RECOMPUTE_EVERY)
+        FAIL_NEXT.set()
+        n3 = len(COMPUTES)
+        a.badge("3", t1 + timedelta(seconds=30))
+        check("recalcul en échec relancé au délai suivant",
+              wait_for(lambda: len([1 for _, a_ in per_agent_calls(n3) if "3" in a_[0].split("=")[1].split(",")]) >= 2,
+                       sync.RECOMPUTE_EVERY * 3), str(COMPUTES[n3:]))
 
         # Accès salle : badge enregistré mais pas de recalcul ; ici NOC injoignable
         check("pointeuse injoignable : erreur claire enregistrée",
@@ -294,6 +338,7 @@ def scenario():
         # Coupure réseau : reconnexion, rattrapage par synchro complète
         a.live.append(fakezk.DROP)
         check("coupure détectée et enregistrée", wait_for(lambda: DB.devices[1]["last_sync_ok"] == 0, 3))
+        check("coupure : plus « en écoute »", DB.devices[1]["live_since"] is None)
         a.fail_connect = 6  # 3 essais refusés (TCP puis UDP à chaque essai)
         check("reconnexion après coupure", wait_for(lambda: a.connections >= 2 and DB.devices[1]["last_sync_ok"] == 1, 6))
         tries = a.attempts[-4:]
@@ -323,18 +368,21 @@ def scenario():
         # Désactivation : la connexion est fermée
         DB.devices[2]["active"] = 0
         check("pointeuse désactivée : connexion fermée", wait_for(lambda: b.connected == 0, 4))
+        check("pointeuse désactivée : plus « en écoute »", wait_for(lambda: DB.devices[2]["live_since"] is None, 2))
     finally:
-        sync.stop.set()
+        # Arrêt comme « docker compose down » : SIGTERM au processus
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 test_clock_window()
-test_recompute_batching()
+test_recompute_queue()
 driver = threading.Thread(target=scenario, daemon=True)
 driver.start()
 start = time.monotonic()
 sync.main()
 driver.join(5)
 elapsed = time.monotonic() - start
-check("arrêt propre en quelques secondes", elapsed < 60 and not driver.is_alive(), f"{elapsed:.1f} s")
+check("arrêt propre sur SIGTERM, en quelques secondes", sync.stop.is_set() and elapsed < 60 and not driver.is_alive(),
+      f"{elapsed:.1f} s")
 print(f"\n{fail} échec(s)" if fail else "\nTous les tests passent.")
 sys.exit(1 if fail else 0)

@@ -16,10 +16,10 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 
 ## Ce que fait le module Présence
 
-- **Reçoit les badges en temps réel** : le service `worker` garde une connexion ouverte avec chaque pointeuse active et enregistre chaque badge dès qu'il est passé. La journée de l'agent est recalculée dans la foulée (au plus une fois toutes les 20 secondes par agent), et le tableau de bord comme la présence du jour se rafraîchissent seuls toutes les 30 secondes.
+- **Tout est en direct** : un badge apparaît dans la plateforme en quelques secondes, sans recharger la page (voir « Fonctionnement en direct » ci-dessous).
 - **Synchronisation complète** sur la même connexion (ces appareils n'acceptent souvent qu'un client à la fois) : au démarrage puis toutes les 30 minutes (`FULL_SYNC_INTERVAL`), elle relit les utilisateurs, tous les pointages et l'horloge. Rien n'est perdu pendant une coupure : les badges restent sur l'appareil et sont repris à la reconnexion.
 - **Reconnexion automatique** en cas de coupure, après 10 s, 30 s, 60 s puis toutes les 5 minutes, sans bloquer les autres pointeuses. L'erreur est affichée sur la page Pointeuses.
-- **Calcul global** des 7 derniers jours toutes les 5 minutes (`SYNC_INTERVAL`), en filet de sécurité.
+- **Calcul global** des 7 derniers jours toutes les 5 minutes (`SYNC_INTERVAL`), dans un thread à part, en filet de sécurité.
 - **Rien n'est effacé ni modifié sur les appareils**, à une exception près : chaque nuit à 03:00 (`CLOCK_SET_AT`, `off` pour désactiver), l'horloge de chaque pointeuse est remise à l'heure de la VM. L'écart avant et après est noté dans le journal du worker et dans le journal d'activité.
 - **Importe les employés** depuis les pointeuses. Le nom affiché dans la plateforme se modifie ensuite par un admin, sans toucher aux appareils.
 - **Calcule chaque journée** : arrivée, départ, temps de présence, retard, départ anticipé, heures supplémentaires.
@@ -27,7 +27,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Sorties manquantes** : une journée sans badge de sortie est marquée « sortie manquante » et ne compte aucune heure tant qu'un admin ou les RH n'ont pas saisi l'heure de sortie. La correction est tracée (qui, quand, motif) et peut être annulée.
 - **Accès aux salles** (NOC, IT Room) : historique des entrées, séparé du calcul de présence.
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
-- **Page Pointeuses** : état de la connexion, dernière synchronisation complète, dernier badge reçu en temps réel.
+- **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
 - **Export CSV** (compatible Excel), **journal d'activité**, rôles **Administrateur / RH / Lecteur**.
 
 ### Règles de calcul
@@ -43,6 +43,25 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 | Pas de sortie | « En cours » le jour même, puis « sortie manquante » |
 
 Les règles sont dans `app/Modules/Attendance/Services/DayCalculator.php` et testées par `php tests/DayCalculatorTest.php`. Le service de synchronisation est testé sans pointeuse par `python3 tests/test_sync.py` (faux module `zk` dans `tests/fakezk`, hors de l'image Docker).
+
+### Fonctionnement en direct
+
+Objectif : un badge visible dans la plateforme en moins de 10 secondes, sans recharger la page.
+
+| Étape | Où | Délai |
+|---|---|---|
+| 1. Le badge est envoyé par la pointeuse sur la connexion ouverte (`live_capture`) et inséré dans `punches` ; `devices.last_event_at` est mis à jour | `worker/sync.py`, un thread par pointeuse | immédiat |
+| 2. Badge de présence : l'agent est mis en file, puis sa journée (veille et jour même, pour les horaires de nuit) est recalculée. Un seul appel `php bin/compute.php --employee-device-id=…` au plus toutes les 5 s pour tous les agents en attente | thread « recalcul » du worker | 0 à 5 s |
+| 3. Les pages ouvertes interrogent `GET /api/direct` toutes les 5 s (60 s si l'onglet est caché) | `public/assets/js/app.js` | 0 à 5 s |
+
+Sur les pages **Tableau de bord**, **Présence** (journée d'aujourd'hui) et **Pointeuses** :
+
+- indicateurs mis à jour avec une courte animation, nouveaux pointages ajoutés en haut des « Derniers pointages » avec un surlignage, retards du jour et pastilles des pointeuses à jour ;
+- sur la page Présence, les lignes concernées (arrivée, départ, présence, retard, heures sup, statut) sont mises à jour ; si un nouvel agent devient concerné par les filtres, une barre « Nouveaux pointages : actualiser » s'affiche ;
+- une notification discrète en bas à droite pour chaque badge (« … est entré · Entrée 5e étage »), désactivable avec l'interrupteur « Notifications » de l'en-tête (choix mémorisé dans le navigateur) ;
+- l'indicateur « En direct · à jour il y a X s » de la barre du haut passe en gris « Hors ligne » si les appels échouent (nouvel essai après 10 s, 30 s puis 60 s). Si la session a expiré, retour à la page de connexion.
+
+`/api/direct` (droit « consultation ») renvoie du JSON, jamais mis en cache : nouveaux pointages depuis `since_punch` (30 au plus), journées du jour modifiées depuis `since_day`, indicateurs (les mêmes que le tableau de bord, service `DashboardStats`), retards du jour et état des pointeuses. Il libère le verrou de session dès l'utilisateur vérifié, pour ne pas bloquer les autres onglets, et répond en quelques millisecondes (index sur `punches.id` et `attendance_days.computed_at`). `computed_at` ne change que si le résultat d'une journée change : le calcul global des 5 minutes ne renvoie donc pas toutes les lignes aux pages ouvertes.
 
 ---
 
@@ -124,24 +143,23 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 | Accéder à phpMyAdmin | depuis ton poste : `ssh -L 8090:127.0.0.1:8090 ubuntu01@10.169.153.144`, puis http://localhost:8090 |
 | Voir la synchronisation | `sudo docker compose logs -f worker` |
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
-| Mettre à jour | `git pull && sudo docker compose up -d --build`, puis appliquer les migrations nouvelles (ci-dessous) |
+| Mettre à jour | `git pull`, appliquer les migrations nouvelles (ci-dessous), puis `sudo docker compose up -d --build` |
 | Réinitialiser un mot de passe admin | `sudo docker compose exec -it app php bin/create-admin.php <identifiant>` |
 | Arrêter la plateforme (ELK n'est pas touché) | `sudo docker compose down` |
 
 ### Appliquer une migration sur une base existante
 
-`database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide). Les changements de structure arrivent ensuite sous forme de fichiers `database/migrations/NNN_*.sql`, à appliquer une fois, dans l'ordre, après le `git pull` :
+`database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide). Les changements de structure arrivent ensuite sous forme de fichiers `database/migrations/NNN_*.sql`, à appliquer une fois, dans l'ordre, après le `git pull` et **avant** de reconstruire les conteneurs (le nouveau code utilise les nouvelles colonnes) :
 
 ```bash
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" "$MARIADB_DATABASE"' \
-  < database/migrations/001_last_event_at.sql
+sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
 ```
 
-Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
+Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
 
 | Migration | Contenu |
 |---|---|
-| `001_last_event_at.sql` | `devices.last_event_at` : heure du dernier badge reçu en temps réel |
+| `001_live.sql` | Mode direct : `devices.last_event_at` (dernier badge reçu), `devices.live_since` (écoute en direct active), index sur `attendance_days.computed_at` |
 
 ### Sauvegarde de la base
 
@@ -163,8 +181,8 @@ app/
   Modules/
     Platform/              socle commun : connexion, profil, utilisateurs, modules à venir
     Attendance/            module Présence
-      Controllers/         une classe par écran
-      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer
+      Controllers/         une classe par écran ; LiveController (/api/direct)
+      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs)
       Views/
   Views/                   gabarit commun, pages d'erreur
 bin/                       compute.php (calcul), create-admin.php
@@ -173,7 +191,7 @@ database/                  schema.sql, seed.sql (chargés au premier démarrage)
 docker/                    images app (Apache + HTTPS) et worker
 public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes)
 worker/                    sync.py (connexion permanente aux pointeuses, calculs), run.sh (lancement)
-tests/                     règles de calcul (PHP) ; worker avec un faux module zk (tests/fakezk)
+tests/                     règles de calcul (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
 
 Chaque futur module (Fleet, Leave) aura son dossier dans `app/Modules/` et réutilisera la table `employees`, les comptes et le gabarit.

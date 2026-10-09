@@ -49,6 +49,14 @@ final class Router
             }
 
             if ($route['ability'] !== null) {
+                // API : réponse JSON, jamais de redirection vers une page HTML
+                if (str_starts_with($path, '/api/') && !Auth::can($route['ability'])) {
+                    http_response_code(Auth::user() === null ? 401 : 403);
+                    header('Content-Type: application/json; charset=utf-8');
+                    header('Cache-Control: no-store');
+                    echo json_encode(['error' => Auth::user() === null ? 'session' : 'droits']);
+                    return;
+                }
                 if (Auth::user() === null) {
                     $_SESSION['_intended'] = $method === 'GET' ? $uri : '/';
                     header('Location: /connexion');

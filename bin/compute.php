@@ -5,9 +5,10 @@ declare(strict_types=1);
  * Recalcul des journées de présence.
  *   php bin/compute.php --days=7                 (derniers jours, utilisé par le worker)
  *   php bin/compute.php --from=2026-09-01 --to=2026-09-30
- *   php bin/compute.php --employee-device-id=42 --from=2026-10-08 --to=2026-10-09
- *       (seulement ces agents, numéros de pointeuse séparés par des virgules ;
- *        utilisé par le worker après chaque badge reçu en temps réel)
+ *   php bin/compute.php --employee-device-id=42,57 --from=2026-10-08 --to=2026-10-09
+ *       (seulement ces agents : numéros de pointeuse séparés par des virgules,
+ *        ou option répétée ; sans --from, la veille et le jour même. Utilisé
+ *        par le worker après les badges reçus en temps réel)
  * Au tout premier passage (table vide), l'historique est calculé depuis le
  * réglage history_start_date.
  */
@@ -22,11 +23,16 @@ $today = date('Y-m-d');
 
 $employeeIds = null;
 if (isset($opts['employee-device-id'])) {
-    $deviceIds = array_values(array_filter(array_map('trim', explode(',', (string) $opts['employee-device-id'])), 'strlen'));
-    if (!$deviceIds || !isset($opts['from'])) {
-        fwrite(STDERR, "Usage : --employee-device-id=<numéro>[,<numéro>…] --from=AAAA-MM-JJ [--to=AAAA-MM-JJ]\n");
+    $deviceIds = [];
+    foreach ((array) $opts['employee-device-id'] as $list) {
+        array_push($deviceIds, ...explode(',', (string) $list));
+    }
+    $deviceIds = array_values(array_unique(array_filter(array_map('trim', $deviceIds), 'strlen')));
+    if (!$deviceIds) {
+        fwrite(STDERR, "Usage : --employee-device-id=<numéro>[,<numéro>…] [--from=AAAA-MM-JJ] [--to=AAAA-MM-JJ]\n");
         exit(2);
     }
+    $opts['from'] ??= date('Y-m-d', strtotime('-1 day'));
     $employeeIds = array_map('intval', array_column(Database::all(
         'SELECT id FROM employees WHERE device_user_id IN (' . implode(',', array_fill(0, count($deviceIds), '?')) . ')',
         $deviceIds

@@ -7,10 +7,13 @@ Processus principal du conteneur `worker` (lancé par run.sh) :
   FULL_SYNC_INTERVAL secondes (utilisateurs, tous les pointages, horloge),
   et entre deux, écoute en direct des badges (live_capture de pyzk).
 - Chaque badge reçu est inséré tout de suite dans punches (doublons ignorés
-  grâce à la clé unique), puis la journée de l'agent est recalculée (au plus
-  une fois toutes les 20 s par agent).
-- Calcul global des derniers jours toutes les SYNC_INTERVAL secondes, en
-  filet de sécurité.
+  grâce à la clé unique). Après un badge de présence, la journée de l'agent
+  (veille et jour même) est recalculée : les badges sont mis en file et un
+  seul appel PHP part au plus toutes les 5 s pour tous les agents en attente.
+- Calcul global des derniers jours toutes les SYNC_INTERVAL secondes, dans un
+  thread à part, en filet de sécurité.
+- devices.live_since indique à la plateforme que l'écoute en direct est
+  active (« en écoute »), devices.last_event_at l'heure du dernier badge.
 - Chaque nuit à 03:00, l'horloge de chaque pointeuse est remise à l'heure de
   la VM : c'est la seule écriture faite sur les appareils. Rien n'y est
   jamais effacé ni modifié d'autre.
@@ -46,7 +49,7 @@ HEARTBEAT_INTERVAL = env_float("HEARTBEAT_INTERVAL", 300)   # contrôle de la co
 CLOCK_SET_AT = os.environ.get("CLOCK_SET_AT", "03:00").strip()  # « off » pour désactiver
 CLOCK_WINDOW_HOURS = 3       # si la pointeuse était injoignable à 03:00, rattrapage jusqu'à 06:00
 LIVE_TIMEOUT = 10            # live_capture rend la main (None) après 10 s sans badge
-RECOMPUTE_EVERY = 20         # au plus un recalcul toutes les 20 s par agent
+RECOMPUTE_EVERY = 5          # au plus un appel PHP toutes les 5 s pour les agents en attente
 RETRY_DELAYS = (10, 30, 60, 300)
 STABLE_AFTER = 120           # une connexion tenue 2 min remet le délai de reconnexion à 10 s
 DEVICE_RELOAD = 60           # relecture de la table devices (ajout, désactivation, changement d'IP)
@@ -139,62 +142,80 @@ def clock_due(last_date):
 
 
 def run_compute(args):
+    """Lance bin/compute.php ; vrai si le calcul a réussi."""
     try:
         res = subprocess.run([PHP, COMPUTE_SCRIPT, *args], timeout=1800, check=False)
         if res.returncode != 0:
             log(f"ERREUR calcul ({' '.join(args)}) : code de sortie {res.returncode}")
+        return res.returncode == 0
     except Exception as exc:  # noqa: BLE001
         log(f"ERREUR calcul ({' '.join(args)}) : {type(exc).__name__}: {exc}")
+        return False
 
 
 class Recompute:
-    """Recalculs demandés après les badges, regroupés par agent."""
+    """File des agents à recalculer après un badge de présence."""
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.pending = {}   # device_user_id -> (première date, dernière date)
-        self.last_run = {}  # device_user_id -> instant du dernier recalcul (monotonic)
+        self.wake = threading.Event()  # au moins un agent en attente
+        self.pending = {}              # device_user_id -> (première date, dernière date)
 
     def add(self, uid, day):
         with self.lock:
             first, last = self.pending.get(uid, (day, day))
             self.pending[uid] = (min(first, day), max(last, day))
+            self.wake.set()
 
-    def take_due(self):
-        """Agents à recalculer maintenant, avec la période couverte."""
-        t = time.monotonic()
+    def take(self):
+        """Vide la file : (agents, du, au), ou None si elle est vide."""
         with self.lock:
-            due = [uid for uid in self.pending if t - self.last_run.get(uid, -RECOMPUTE_EVERY) >= RECOMPUTE_EVERY]
-            if not due:
+            if not self.pending:
                 return None
-            days = [self.pending.pop(uid) for uid in due]
-            for uid in due:
-                self.last_run[uid] = t
+            uids = sorted(self.pending)
+            days = list(self.pending.values())
+            self.pending.clear()
+            self.wake.clear()
         # La veille aussi : un badge du matin peut clore un horaire de nuit.
         first = min(d[0] for d in days) - timedelta(days=1)
-        return sorted(due), first, max(d[1] for d in days)
+        return uids, first, max(d[1] for d in days)
 
 
-def compute_loop(recompute, first_syncs):
-    """Calculs PHP, un seul à la fois : global périodique et recalculs par agent."""
+def global_loop(first_syncs, ready):
+    """Calcul global des derniers jours, au démarrage puis toutes les COMPUTE_INTERVAL s."""
     deadline = time.monotonic() + INITIAL_WAIT
     for ev in first_syncs:
         while not stop.is_set() and not ev.is_set() and time.monotonic() < deadline:
             ev.wait(1)
-    if stop.is_set():
-        return
-    # Le premier calcul global doit passer avant les recalculs par agent :
-    # sur une base vide, c'est lui qui calcule l'historique.
-    run_compute([f"--days={COMPUTE_DAYS}"])
-    next_global = time.monotonic() + COMPUTE_INTERVAL
-    while not stop.wait(1):
-        if time.monotonic() >= next_global:
-            run_compute([f"--days={COMPUTE_DAYS}"])
-            next_global = time.monotonic() + COMPUTE_INTERVAL
-        batch = recompute.take_due()
-        if batch:
-            uids, first, last = batch
-            run_compute([f"--employee-device-id={','.join(uids)}", f"--from={first:%Y-%m-%d}", f"--to={last:%Y-%m-%d}"])
+    while not stop.is_set():
+        run_compute([f"--days={COMPUTE_DAYS}"])
+        ready.set()
+        stop.wait(COMPUTE_INTERVAL)
+
+
+def recompute_loop(recompute, ready):
+    """Recalcul rapide des agents qui viennent de badger : un appel PHP au plus toutes les RECOMPUTE_EVERY s."""
+    # Le premier calcul global passe avant : sur une base vide, c'est lui qui
+    # calcule l'historique.
+    while not stop.is_set() and not ready.wait(1):
+        pass
+    last_start = -RECOMPUTE_EVERY
+    while not stop.is_set():
+        if not recompute.wake.wait(1):
+            continue
+        wait = last_start + RECOMPUTE_EVERY - time.monotonic()
+        if wait > 0 and stop.wait(wait):
+            break
+        batch = recompute.take()
+        if not batch:
+            continue
+        uids, first, last = batch
+        last_start = time.monotonic()
+        if not run_compute([f"--employee-device-id={','.join(uids)}", f"--from={first:%Y-%m-%d}", f"--to={last:%Y-%m-%d}"]):
+            # Échec (base occupée, verrou…) : les agents repartent dans la file.
+            for uid in uids:
+                recompute.add(uid, first + timedelta(days=1))
+                recompute.add(uid, last)
 
 
 class DeviceWorker(threading.Thread):
@@ -239,6 +260,7 @@ class DeviceWorker(threading.Thread):
                 connected_at = time.monotonic()
                 attempt = 0
                 self.first_sync.set()
+                self.set_live(conn, True)
                 self.session(zk, conn)
             except Exception as exc:  # noqa: BLE001
                 self.first_sync.set()
@@ -257,6 +279,7 @@ class DeviceWorker(threading.Thread):
                     self.close(zk)
         if conn is not None:
             try:
+                self.set_live(conn, False)
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
@@ -269,6 +292,14 @@ class DeviceWorker(threading.Thread):
         except Exception:  # noqa: BLE001
             pass
 
+    def set_live(self, conn, live):
+        """Écoute en direct active ou non (indicateur « en écoute » de la plateforme)."""
+        conn.ping(reconnect=True)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE devices SET live_since = " + ("NOW()" if live else "NULL") + " WHERE id = %s",
+                        (self.dev["id"],))
+        conn.commit()
+
     def mark_error(self, conn, msg):
         """Enregistre l'erreur dans devices ; rend la connexion à la base (ou None)."""
         try:
@@ -278,7 +309,8 @@ class DeviceWorker(threading.Thread):
             conn.ping(reconnect=True)
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE devices SET last_sync_at = NOW(), last_sync_ok = 0, last_error = %s WHERE id = %s",
+                    "UPDATE devices SET last_sync_at = NOW(), last_sync_ok = 0, last_error = %s, live_since = NULL "
+                    "WHERE id = %s",
                     (msg, self.dev["id"]),
                 )
             conn.commit()
@@ -444,6 +476,20 @@ class DeviceWorker(threading.Thread):
         conn.commit()
 
 
+def clear_live():
+    """Au démarrage, aucune écoute n'est active (le service a pu être arrêté brutalement)."""
+    try:
+        conn = db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE devices SET live_since = NULL WHERE live_since IS NOT NULL")
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERREUR remise à zéro de l'écoute en base : {type(exc).__name__}: {exc}")
+
+
 def signature(dev):
     return (dev["ip"], int(dev["port"]), int(dev["comm_key"]))
 
@@ -461,7 +507,8 @@ def main():
         f"horloges remises à l'heure à {CLOCK_SET_AT}")
     recompute = Recompute()
     workers = {}
-    computer = None
+    computers = []
+    clear_live()
 
     while not stop.is_set():
         try:
@@ -486,17 +533,22 @@ def main():
                 if dev_id not in workers:
                     workers[dev_id] = DeviceWorker(d, recompute)
                     workers[dev_id].start()
-            if computer is None:
-                computer = threading.Thread(target=compute_loop, name="calcul", daemon=True,
-                                            args=(recompute, [w.first_sync for w in workers.values()]))
-                computer.start()
+            if not computers:
+                ready = threading.Event()
+                computers = [
+                    threading.Thread(target=global_loop, name="calcul-global", daemon=True,
+                                     args=([w.first_sync for w in workers.values()], ready)),
+                    threading.Thread(target=recompute_loop, name="recalcul", daemon=True, args=(recompute, ready)),
+                ]
+                for t in computers:
+                    t.start()
 
         stop.wait(DEVICE_RELOAD)
 
     for w in workers.values():
         w.join(timeout=LIVE_TIMEOUT + 5)
-    if computer is not None:
-        computer.join(timeout=5)
+    for t in computers:
+        t.join(timeout=5)
     log("arrêt terminé")
     return 0
 

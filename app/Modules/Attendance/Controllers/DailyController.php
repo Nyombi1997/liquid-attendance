@@ -5,6 +5,7 @@ namespace App\Modules\Attendance\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Modules\Attendance\Services\DashboardStats;
 
 /** Présence d'une journée (ou d'une période), filtrable et exportable. */
 final class DailyController extends Controller
@@ -19,12 +20,15 @@ final class DailyController extends Controller
             'late'     => array_sum(array_column($rows, 'late_minutes')),
             'overtime' => array_sum(array_column($rows, 'overtime_minutes')),
         ];
+        $today = date('Y-m-d');
         $this->render('Attendance:daily', [
             'title'   => 'Présence',
             'filters' => $filters,
             'rows'    => $rows,
             'totals'  => $totals,
             'groups'  => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
+            // Mode direct seulement pour la journée d'aujourd'hui
+            'live'    => $filters['from'] === $today && $filters['to'] === $today ? DashboardStats::liveState($today) : null,
         ]);
     }
 

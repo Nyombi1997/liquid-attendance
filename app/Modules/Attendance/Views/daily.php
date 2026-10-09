@@ -2,7 +2,6 @@
 $statuses = ['present' => 'Présent', 'retard' => 'Retard', 'absent' => 'Absent', 'sortie_manquante' => 'Sortie manquante',
     'en_cours' => 'En cours', 'hors_horaire' => 'Hors horaire', 'repos' => 'Repos'];
 $multi = $filters['from'] !== $filters['to'];
-$live = !$multi && $filters['from'] === date('Y-m-d');
 $query = array_filter(['from' => $filters['from'], 'to' => $filters['to'], 'group' => $filters['group'] ?: null,
     'status' => $filters['status'] ?: null, 'q' => $filters['q'] ?: null]);
 $shift = fn(int $days) => url('/presence', array_merge($query, [
@@ -10,7 +9,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
     'to' => date('Y-m-d', strtotime($filters['to'] . " $days days")),
 ]));
 ?>
-<div class="page-head"<?= $live ? ' data-auto-refresh="30"' : '' ?>>
+<div class="page-head"<?php if ($live): ?> data-live="presence" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($filters['from']) ?>" data-live-group="<?= (int) $filters['group'] ?>" data-live-status="<?= e($filters['status']) ?>" data-live-q="<?= e($filters['q']) ?>"<?php endif; ?>>
   <div>
     <h1>Présence</h1>
     <p class="muted"><?= $multi ? 'Du ' . e(date_fr($filters['from'], false)) . ' au ' . e(date_fr($filters['to'], false)) : e(ucfirst(date_fr($filters['from']))) ?> · <?= count($rows) ?> ligne(s)</p>
@@ -44,6 +43,10 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
   <span>Heures sup <strong><?= minutes_label($totals['overtime']) ?></strong></span>
 </div>
 
+<?php if ($live): ?>
+<p class="live-bar" data-live-bar hidden>Nouveaux pointages : <a href="<?= e(url('/presence', $query)) ?>">actualiser</a></p>
+<?php endif; ?>
+
 <section class="card table-card">
   <div class="table-scroll">
   <table class="table">
@@ -53,18 +56,18 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
     </tr></thead>
     <tbody>
     <?php foreach ($rows as $r): ?>
-      <tr>
+      <tr data-employee-id="<?= (int) $r['employee_id'] ?>">
         <?php if ($multi): ?><td class="nowrap"><?= e(date('d/m/Y', strtotime($r['work_date']))) ?></td><?php endif; ?>
         <td><a class="person" href="/employes/<?= (int) $r['employee_id'] ?>?mois=<?= e(substr($r['work_date'], 0, 7)) ?>">
           <span class="avatar avatar-sm"><?= e(initials($r['name'])) ?></span>
           <span><strong><?= e($r['name']) ?></strong><small class="muted block"><?= e($r['group_name'] ?? 'Sans groupe') ?></small></span></a></td>
         <td class="muted"><?= e($r['schedule_name'] ?? '—') ?><?php if ($r['expected_start']): ?><small class="block"><?= e(time_label($r['expected_start'])) ?>–<?= e(time_label($r['expected_end'])) ?></small><?php endif; ?></td>
-        <td class="nowrap"><?= e(time_label($r['first_in'])) ?></td>
-        <td class="nowrap"><?= e(time_label($r['last_out'])) ?><?php if ($r['corrected_out']): ?> <span class="tag" title="<?= e($r['correction_note'] ?? 'Saisie manuelle') ?>">corrigée</span><?php endif; ?></td>
-        <td class="num"><?= minutes_label((int) $r['worked_minutes']) ?></td>
-        <td class="num <?= $r['late_minutes'] > 0 ? 'text-warn' : '' ?>"><?= $r['late_minutes'] > 0 ? (int) $r['late_minutes'] . ' min' : '—' ?></td>
-        <td class="num"><?= minutes_label((int) $r['overtime_minutes']) ?></td>
-        <td><?= status_badge($r['status']) ?></td>
+        <td class="nowrap" data-col="first_in"><?= e(time_label($r['first_in'])) ?></td>
+        <td class="nowrap" data-col="last_out"><?= e(time_label($r['last_out'])) ?><?php if ($r['corrected_out']): ?> <span class="tag" title="<?= e($r['correction_note'] ?? 'Saisie manuelle') ?>">corrigée</span><?php endif; ?></td>
+        <td class="num" data-col="worked"><?= minutes_label((int) $r['worked_minutes']) ?></td>
+        <td class="num <?= $r['late_minutes'] > 0 ? 'text-warn' : '' ?>" data-col="late"><?= e(late_label((int) $r['late_minutes'])) ?></td>
+        <td class="num" data-col="overtime"><?= minutes_label((int) $r['overtime_minutes']) ?></td>
+        <td data-col="status"><?= status_badge($r['status']) ?></td>
       </tr>
     <?php endforeach; ?>
     <?php if (!$rows): ?><tr><td colspan="9" class="muted center">Aucune donnée pour ces critères.</td></tr><?php endif; ?>

@@ -14,7 +14,8 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 |---|---|
 | Accès réseau VM → pointeuses | **Fait** le 9 oct. 2026 (VLAN 3602, testé : TCP 4370 OK sur les 4 pointeuses d'étage) |
 | Base du projet `Nyombi1997/liquid-attendance` | **Fait** : Docker, MVC, base, synchronisation, module Présence complet |
-| Pointages en temps réel, remise à l'heure nocturne, rafraîchissement auto | **Fait** le 9 oct. 2026, testé avec un faux module `zk` ; **à valider sur la VM** avec les vraies pointeuses (migration `001_last_event_at.sql` à appliquer) |
+| Pointages en temps réel, remise à l'heure nocturne | **Fait** le 9 oct. 2026, testé avec un faux module `zk` |
+| Plateforme « en direct » (badge visible en moins de 10 s sans recharger : API `/api/direct`, notifications, indicateur « En direct ») | **Fait** le 9 oct. 2026, testé en local (faux `zk`, MariaDB, Chrome) ; **à valider sur la VM** avec les vraies pointeuses (migration `001_live.sql` à appliquer avant la reconstruction) |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
@@ -116,7 +117,8 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Back-end | PHP 8.3, MVC maison, un module par dossier (`app/Modules/…`) |
 | Front-end | HTML, CSS, JavaScript sans dépendance externe ; PWA installable |
 | Base | **MariaDB 11.4** + **phpMyAdmin** |
-| Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min). Calcul en PHP (mêmes règles que l'application) après chaque badge et toutes les 5 min. Horloges remises à l'heure de la VM chaque nuit à 03:00 |
+| Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min). Calcul en PHP (mêmes règles que l'application) : journée de l'agent recalculée après chaque badge de présence (un appel au plus toutes les 5 s pour tous les agents en attente), et calcul global toutes les 5 min dans un thread à part. Horloges remises à l'heure de la VM chaque nuit à 03:00 |
+| Mode direct | API JSON `GET /api/direct` interrogée toutes les 5 s par les pages ouvertes (60 s onglet caché) : nouveaux pointages, journées modifiées, indicateurs, état des pointeuses. Mise à jour de la page sans rechargement, notifications désactivables |
 | Cache navigateur | Fichiers statiques versionnés par date de modification (`asset()`, `?v=`), cache d'un an ; service worker sans numéro de version à modifier |
 | Serveur | Docker Compose sur la VM, projet `liquid-attendance`, réseau Docker séparé d'ELK |
 | Accès | https://41.174.155.178:8443 (et https://10.169.153.144:8443 en interne) |

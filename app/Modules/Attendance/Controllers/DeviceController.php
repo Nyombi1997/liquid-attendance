@@ -6,6 +6,7 @@ namespace App\Modules\Attendance\Controllers;
 use App\Core\Audit;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Modules\Attendance\Services\DashboardStats;
 
 /** État des pointeuses ; seuls les admins modifient leur configuration. */
 final class DeviceController extends Controller
@@ -20,6 +21,7 @@ final class DeviceController extends Controller
                    FROM devices d JOIN offices o ON o.id = d.office_id ORDER BY d.usage_type DESC, o.name, d.direction'
             ),
             'offices' => Database::all('SELECT * FROM offices ORDER BY name'),
+            'live'    => DashboardStats::liveState(date('Y-m-d')),
         ]);
     }
 
