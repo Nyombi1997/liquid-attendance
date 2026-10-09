@@ -48,3 +48,6 @@ $w = C::punchWindow($night,'2026-10-05');
 check('fenêtre de nuit', ['a'=>$w[0],'b'=>$w[1]], ['a'=>'2026-10-05 18:00:00','b'=>'2026-10-06 14:00:00']);
 echo $fail ? "\n$fail échec(s)\n" : "\nTous les tests passent.\n";
 exit($fail ? 1 : 0);
+
+
+
