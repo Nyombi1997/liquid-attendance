@@ -14,6 +14,7 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 |---|---|
 | Accès réseau VM → pointeuses | **Fait** le 9 oct. 2026 (VLAN 3602, testé : TCP 4370 OK sur les 4 pointeuses d'étage) |
 | Base du projet `Nyombi1997/liquid-attendance` | **Fait** : Docker, MVC, base, synchronisation, module Présence complet |
+| Pointages en temps réel, remise à l'heure nocturne, rafraîchissement auto | **Fait** le 9 oct. 2026, testé avec un faux module `zk` ; **à valider sur la VM** avec les vraies pointeuses (migration `001_last_event_at.sql` à appliquer) |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
@@ -115,7 +116,8 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Back-end | PHP 8.3, MVC maison, un module par dossier (`app/Modules/…`) |
 | Front-end | HTML, CSS, JavaScript sans dépendance externe ; PWA installable |
 | Base | **MariaDB 11.4** + **phpMyAdmin** |
-| Synchronisation | Service `worker` : Python/pyzk pour lire les pointeuses (bibliothèque testée sur nos appareils), puis calcul en PHP (mêmes règles que l'application) |
+| Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min). Calcul en PHP (mêmes règles que l'application) après chaque badge et toutes les 5 min. Horloges remises à l'heure de la VM chaque nuit à 03:00 |
+| Cache navigateur | Fichiers statiques versionnés par date de modification (`asset()`, `?v=`), cache d'un an ; service worker sans numéro de version à modifier |
 | Serveur | Docker Compose sur la VM, projet `liquid-attendance`, réseau Docker séparé d'ELK |
 | Accès | https://41.174.155.178:8443 (et https://10.169.153.144:8443 en interne) |
 | Certificat | Let's Encrypt pour l'adresse IP (profil `shortlived`, renouvelé automatiquement par acme.sh) |
@@ -126,6 +128,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 ## Décisions fonctionnelles
 
 - **Nom des employés** : modifiable par un admin dans la plateforme uniquement ; les pointeuses ne sont jamais modifiées.
+- **Seule écriture sur les pointeuses** : la remise à l'heure de l'horloge, chaque nuit à 03:00 (décidé le 9 oct. 2026). Écart avant et après journalisé.
 - **Sortie non badgée** : la journée est marquée « sortie manquante » et ne compte aucune heure ; un admin ou les RH saisissent l'heure de sortie (tracée, annulable).
 - **Horaires** : saisis manuellement. Attribuables à tout le monde (horaire par défaut), à un groupe ou à un ou plusieurs agents, sur une période. Priorité agent > groupe > défaut. Horaires de nuit gérés.
 - Paramètres d'un horaire : début, fin, jours travaillés, pause déduite, tolérance de retard, seuil des heures supplémentaires.

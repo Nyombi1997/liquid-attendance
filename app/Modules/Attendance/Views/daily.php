@@ -2,6 +2,7 @@
 $statuses = ['present' => 'Présent', 'retard' => 'Retard', 'absent' => 'Absent', 'sortie_manquante' => 'Sortie manquante',
     'en_cours' => 'En cours', 'hors_horaire' => 'Hors horaire', 'repos' => 'Repos'];
 $multi = $filters['from'] !== $filters['to'];
+$live = !$multi && $filters['from'] === date('Y-m-d');
 $query = array_filter(['from' => $filters['from'], 'to' => $filters['to'], 'group' => $filters['group'] ?: null,
     'status' => $filters['status'] ?: null, 'q' => $filters['q'] ?: null]);
 $shift = fn(int $days) => url('/presence', array_merge($query, [
@@ -9,7 +10,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
     'to' => date('Y-m-d', strtotime($filters['to'] . " $days days")),
 ]));
 ?>
-<div class="page-head">
+<div class="page-head"<?= $live ? ' data-auto-refresh="30"' : '' ?>>
   <div>
     <h1>Présence</h1>
     <p class="muted"><?= $multi ? 'Du ' . e(date_fr($filters['from'], false)) . ' au ' . e(date_fr($filters['to'], false)) : e(ucfirst(date_fr($filters['from']))) ?> · <?= count($rows) ?> ligne(s)</p>

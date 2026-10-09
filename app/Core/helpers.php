@@ -107,10 +107,24 @@ function initials(string $name): string
     return $letters ?: '?';
 }
 
+/**
+ * URL d'un fichier de public/assets, versionnée par sa date de modification
+ * (« /assets/css/app.css?v=1760000000 ») : le navigateur peut la garder en
+ * cache un an, et la récupère d'elle-même dès que le fichier change.
+ */
+function asset(string $path): string
+{
+    $path = ltrim($path, '/');
+    $mtime = @filemtime(BASE_PATH . '/public/assets/' . $path);
+    return '/assets/' . $path . ($mtime ? '?v=' . $mtime : '');
+}
+
 /** Icônes du sprite SVG (public/assets/icons.svg). */
 function icon(string $name, string $class = 'icon'): string
 {
-    return '<svg class="' . e($class) . '" aria-hidden="true"><use href="/assets/icons.svg#' . e($name) . '"></use></svg>';
+    static $sprite = null;
+    $sprite ??= asset('icons.svg');
+    return '<svg class="' . e($class) . '" aria-hidden="true"><use href="' . e($sprite) . '#' . e($name) . '"></use></svg>';
 }
 
 function client_ip(): string

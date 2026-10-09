@@ -1,7 +1,7 @@
 <div class="page-head">
   <div>
     <h1>Pointeuses</h1>
-    <p class="muted">Lecture seule : la plateforme récupère les pointages sans rien modifier sur les appareils. Synchronisation toutes les 5 minutes.</p>
+    <p class="muted">Badges reçus en temps réel, synchronisation complète toutes les 30 minutes. Rien n'est effacé ni modifié sur les appareils, sauf l'horloge, remise à l'heure de la plateforme chaque nuit à 03:00.</p>
   </div>
   <?php if (can('admin')): ?><button class="btn btn-primary" type="button" data-dialog="device-new"><?= icon('plus') ?> Ajouter</button><?php endif; ?>
 </div>
@@ -9,11 +9,12 @@
 <section class="card table-card">
   <div class="table-scroll">
   <table class="table">
-    <thead><tr><th>Pointeuse</th><th>Bureau</th><th>Rôle</th><th>Modèle</th><th>Dernière synchro</th><th>Horloge</th><th class="num">Utilisateurs</th><th class="num">Pointages</th><th></th></tr></thead>
+    <thead><tr><th>Pointeuse</th><th>Bureau</th><th>Rôle</th><th>Modèle</th><th>Dernière synchro</th><th>Dernier badge reçu</th><th>Horloge</th><th class="num">Utilisateurs</th><th class="num">Pointages</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($devices as $d):
       $ok = (int) $d['last_sync_ok'] === 1;
-      $offset = $d['clock_offset_sec'] !== null ? (int) $d['clock_offset_sec'] : null; ?>
+      $offset = $d['clock_offset_sec'] !== null ? (int) $d['clock_offset_sec'] : null;
+      $event = $d['last_event_at'] ?? null; ?>
       <tr class="<?= $d['active'] ? '' : 'is-muted' ?>">
         <td><strong><?= e($d['name']) ?></strong><small class="muted block"><?= e($d['ip']) ?>:<?= (int) $d['port'] ?></small></td>
         <td><?= e($d['office']) ?></td>
@@ -24,6 +25,9 @@
           <?php elseif ($ok): ?><span class="badge badge-ok">OK</span> <small class="muted"><?= e(date('d/m H:i', strtotime($d['last_sync_at']))) ?></small>
           <?php else: ?><span class="badge badge-danger">Erreur</span> <small class="muted block"><?= e($d['last_error']) ?></small><?php endif; ?>
         </td>
+        <td class="nowrap"><?php if (!$event): ?><span class="muted">—</span>
+          <?php elseif (substr($event, 0, 10) === date('Y-m-d')): ?><?= e(substr($event, 11, 8)) ?>
+          <?php else: ?><span class="muted"><?= e(date('d/m H:i', strtotime($event))) ?></span><?php endif; ?></td>
         <td><?php if ($offset === null): ?>—<?php elseif (abs($offset) <= 60): ?><span class="text-ok">à l'heure</span><?php else: ?><span class="badge badge-warn"><?= $offset > 0 ? 'avance' : 'retard' ?> de <?= abs($offset) >= 120 ? round(abs($offset) / 60) . ' min' : abs($offset) . ' s' ?></span><?php endif; ?></td>
         <td class="num"><?= e($d['user_count'] ?? '—') ?></td>
         <td class="num"><?= $d['log_count'] !== null ? number_format((int) $d['log_count'], 0, ',', ' ') : '—' ?></td>
@@ -35,7 +39,7 @@
   </div>
 </section>
 
-<p class="muted small">Une horloge décalée de plus d'une minute fausse les retards et les durées : corrigez l'heure sur l'appareil (menu Système &gt; Date/Heure).</p>
+<p class="muted small">Une horloge décalée de plus d'une minute fausse les retards et les durées. Elle est remise à l'heure automatiquement chaque nuit à 03:00 ; si l'écart persiste, corrigez l'heure sur l'appareil (menu Système &gt; Date/Heure).</p>
 
 <?php if (can('admin')):
   $form = function (?array $d) use ($offices) {

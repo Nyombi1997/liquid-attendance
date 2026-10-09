@@ -7,10 +7,10 @@ $slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
 $series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
 $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 ?>
-<div class="page-head">
+<div class="page-head" data-auto-refresh="30">
   <div>
     <h1>Tableau de bord</h1>
-    <p class="muted">Présence de <?= e(date_fr($today)) ?>, mise à jour toutes les 5 minutes.</p>
+    <p class="muted">Présence de <?= e(date_fr($today)) ?>, mise à jour en temps réel (page actualisée toutes les 30 secondes).</p>
   </div>
   <a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a>
 </div>

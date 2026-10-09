@@ -34,6 +34,8 @@ services:
       dockerfile: docker/worker/Dockerfile
     container_name: la-worker
     restart: unless-stopped
+    # Laisse le temps de fermer proprement les connexions aux pointeuses
+    stop_grace_period: 30s
     env_file: .env
     environment:
       TZ: ${APP_TIMEZONE:-Africa/Kinshasa}

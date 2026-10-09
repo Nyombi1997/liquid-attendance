@@ -35,7 +35,7 @@ final class DeviceController extends Controller
             array_values($d)
         );
         Audit::log('pointeuse_ajoutee', $d);
-        flash('success', 'Pointeuse ajoutée. Elle sera interrogée au prochain passage du service de synchronisation.');
+        flash('success', 'Pointeuse ajoutée. Le service de synchronisation s\'y connectera dans la minute.');
         $this->redirect('/pointeuses');
     }
 

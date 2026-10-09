@@ -61,6 +61,20 @@
     update();
   }
 
+  // Rechargement automatique (tableau de bord, présence du jour) :
+  // <div data-auto-refresh="30">. Uniquement si l'onglet est visible, sans
+  // champ de formulaire actif ni boîte de dialogue ouverte.
+  const auto = document.querySelector('[data-auto-refresh]');
+  if (auto) {
+    const delay = Math.max(10, parseInt(auto.dataset.autoRefresh, 10) || 30) * 1000;
+    const loaded = Date.now();
+    const busy = () => document.activeElement?.matches('input, select, textarea, [contenteditable]')
+      || document.querySelector('dialog[open]') !== null;
+    setInterval(() => {
+      if (!document.hidden && !busy() && Date.now() - loaded >= delay) window.location.reload();
+    }, 2000);
+  }
+
   // Application installable (PWA)
   if ('serviceWorker' in navigator && window.isSecureContext) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

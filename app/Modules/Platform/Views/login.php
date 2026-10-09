@@ -2,7 +2,7 @@
 <main class="auth">
   <section class="auth-panel">
     <div class="auth-brand">
-      <img src="/assets/img/logo.svg" alt="" width="44" height="44">
+      <img src="<?= e(asset('img/logo.svg')) ?>" alt="" width="44" height="44">
       <div>
         <strong><?= e(Config::get('app_name')) ?></strong>
         <small>Plateforme interne</small>

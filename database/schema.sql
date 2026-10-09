@@ -94,6 +94,7 @@ CREATE TABLE devices (
   last_sync_at     DATETIME     NULL,
   last_sync_ok     TINYINT(1)   NULL,
   last_error       VARCHAR(255) NULL,
+  last_event_at    DATETIME     NULL COMMENT 'dernier badge reçu en temps réel',
   clock_offset_sec INT          NULL COMMENT 'heure pointeuse - heure serveur',
   user_count       INT UNSIGNED NULL,
   log_count        INT UNSIGNED NULL,
