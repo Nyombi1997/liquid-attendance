@@ -1,0 +1,92 @@
+# Plateforme interne Liquid — Attendance (puis Fleet et Leave)
+# Cohabite avec ELK sur la même VM : aucun port ELK n'est réutilisé.
+#   8443/tcp  : application (HTTPS), publiée via NAT 41.174.155.178:8443
+#   8088/tcp  : validation Let's Encrypt (NAT 41.174.155.178:80 -> 8088)
+#   8090/tcp  : phpMyAdmin, uniquement sur 127.0.0.1 (tunnel SSH)
+#   MariaDB   : aucun port publié, réseau Docker interne
+#
+# Ne jamais lancer `docker system prune --volumes` : les données sont dans ./data
+
+name: liquid-attendance
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    container_name: la-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${APP_TIMEZONE:-Africa/Kinshasa}
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./data/certs:/certs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    container_name: la-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${APP_TIMEZONE:-Africa/Kinshasa}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  db:
+    image: mariadb:11.4
+    container_name: la-db
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TIMEZONE:-Africa/Kinshasa}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+01:00"]
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: la-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "127.0.0.1:8090:80"
+    depends_on: [db]
+    networks: [internal]
+
+  acme:
+    image: neilpang/acme.sh:latest
+    container_name: la-acme
+    restart: unless-stopped
+    command: daemon
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./data/acme:/acme.sh
+      - ./data/certs:/certs
+
+networks:
+  internal:
+    name: liquid-attendance-net
