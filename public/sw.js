@@ -5,8 +5,8 @@
 // (helper PHP asset()). Une URL versionnée ne change jamais de contenu : elle
 // est servie depuis le cache, et seule la dernière version de chaque fichier
 // est gardée. Inutile de modifier CACHE à chaque mise à jour.
-const CACHE = 'liquid-v2';
-const PRECACHE = ['/offline.html', '/assets/icons.svg', '/assets/img/logo.svg', '/assets/img/icon-192.png'];
+const CACHE = 'liquid-v3';
+const PRECACHE = ['/offline.html', '/assets/js/offline.js', '/assets/icons.svg', '/assets/img/logo.svg', '/assets/img/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
@@ -49,6 +49,19 @@ async function unversioned(req) {
   }
 }
 
+// Pages : au réveil du téléphone, le réseau met parfois une seconde à revenir.
+// Deux nouveaux essais avant d'afficher la page hors ligne (qui réessaie
+// ensuite d'elle-même, voir assets/js/offline.js).
+async function navigate(req) {
+  for (const wait of [0, 1500, 3000]) {
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    try {
+      return await fetch(req);
+    } catch (err) { /* nouvel essai */ }
+  }
+  return (await caches.match('/offline.html')) || Response.error();
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
@@ -56,7 +69,7 @@ self.addEventListener('fetch', (e) => {
   // Données en direct (/api/) : toujours le réseau, jamais de cache
   if (url.pathname.startsWith('/api/')) return;
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('/offline.html')));
+    e.respondWith(navigate(req));
     return;
   }
   if (url.pathname.startsWith('/assets/')) {

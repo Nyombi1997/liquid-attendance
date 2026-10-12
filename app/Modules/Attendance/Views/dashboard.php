@@ -2,21 +2,19 @@
 $rate = $kpis['rate'];
 $full = can('view'); // false : manager (son département, pages du jour) ou RH
 $daily = can('presence'); // présence du jour : pas pour les RH
-$series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
-if (!$full) {
-    // RH et managers : pas de sorties manquantes, ces journées comptent parmi les présents
-    unset($series['incomplet']);
-    foreach ($trend as &$t) {
-        $t['present'] += $t['incomplet'];
-        unset($t['incomplet']);
-    }
-    unset($t);
-}
-// Graphique : barres empilées sur 14 jours (SVG généré côté serveur)
-$max = max(1, ...array_map(fn($d) => array_sum($d), array_values($trend)));
-$w = 640; $h = 200; $pad = 28; $n = count($trend);
-$slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
-$jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
+// Camembert (anneau) en SVG : cercles de circonférence 100, chaque part est
+// tracée par stroke-dasharray / stroke-dashoffset (pas d'attribut style=, CSP).
+// Fond gris tant qu'il n'y a aucune donnée. Le mode direct (app.js, data-donut)
+// reprend les pourcentages calculés par le serveur.
+$donut = static function (array $a, array $b, string $label): string {
+    // $a, $b : [clé de l'indicateur en %, classe de couleur, valeur]
+    $seg = static fn(array $p, int $offset, string $part) => '<circle class="donut-seg ' . $p[1] . '" cx="21" cy="21" r="15.9155"'
+        . ' transform="rotate(-90 21 21)" stroke-dasharray="' . $p[2] . ' ' . (100 - $p[2]) . '" stroke-dashoffset="' . -$offset . '" data-donut-' . $part . '/>';
+    return '<div class="donut" role="img" aria-label="' . e($label) . '" data-donut="' . e($a[0]) . ' ' . e($b[0]) . '">'
+        . '<svg viewBox="0 0 42 42" aria-hidden="true"><circle class="donut-track" cx="21" cy="21" r="15.9155"/>'
+        . $seg($a, 0, 'a') . $seg($b, $a[2], 'b') . '</svg>'
+        . '<span class="donut-center"><span><strong data-kpi="' . e($a[0]) . '">' . $a[2] . '</strong> %</span></span></div>';
+};
 ?>
 <div class="page-head" data-live="dashboard" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($today) ?>">
   <div>
@@ -30,12 +28,12 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 </div>
 
 <div class="kpis">
-  <div class="kpi kpi-primary">
+  <<?= $daily ? 'a href="/presence?status=venus"' : 'div' ?> class="kpi kpi-primary">
     <span class="kpi-label">Présents aujourd'hui</span>
     <strong class="kpi-value"><span data-kpi="arrived"><?= $kpis['arrived'] ?></span><small> / <span data-kpi="expected"><?= $kpis['expected'] ?></span></small></strong>
     <div class="meter" role="img" data-kpi-meter aria-label="<?= $rate ?> % des agents attendus"><svg viewBox="0 0 100 6" preserveAspectRatio="none"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-fill" width="<?= min(100, $rate) ?>" height="6" rx="3"/></svg></div>
     <span class="kpi-foot"><span data-kpi="rate"><?= $rate ?></span> % des agents attendus</span>
-  </div>
+  </<?= $daily ? 'a' : 'div' ?>>
   <<?= $daily ? 'a href="/presence?status=retard"' : 'div' ?> class="kpi">
     <span class="kpi-label">Retards</span>
     <strong class="kpi-value" data-kpi="late"><?= $kpis['late'] ?></strong>
@@ -58,26 +56,27 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 <div class="grid-main">
   <section class="card">
     <div class="card-head">
-      <h2>Tendance sur 14 jours</h2>
-      <?php if ($full): ?><a class="link" href="/presence?from=<?= e(array_key_first($trend)) ?>&amp;to=<?= e($today) ?>">Voir le détail</a><?php endif; ?>
+      <h2>Répartition du jour</h2>
+      <?php if ($daily): ?><a class="link" href="/presence?status=venus">Voir les présents</a><?php endif; ?>
     </div>
-    <svg class="chart" viewBox="0 0 <?= $w ?> <?= $h + 22 ?>" role="img" aria-label="Présence quotidienne sur 14 jours">
-      <?php foreach ([0, 0.5, 1] as $g): $y = $h - $g * ($h - 10); ?>
-        <line class="grid" x1="<?= $pad ?>" x2="<?= $w ?>" y1="<?= $y ?>" y2="<?= $y ?>"/>
-        <text class="axis" x="<?= $pad - 6 ?>" y="<?= $y + 4 ?>" text-anchor="end"><?= (int) round($g * $max) ?></text>
-      <?php endforeach; ?>
-      <?php $i = 0; foreach ($trend as $date => $d): $x = $pad + $i * $slot + ($slot - $bar) / 2; $y = $h; ?>
-        <g><title><?= e(date_fr($date)) ?> : <?= $d['present'] ?> présents, <?= $d['retard'] ?> retards, <?= isset($d['incomplet']) ? $d['incomplet'] . ' incomplets, ' : '' ?><?= $d['absent'] ?> absents</title>
-        <?php foreach (array_keys($series) as $k): $bh = $d[$k] / $max * ($h - 10); if ($bh <= 0) continue; $y -= $bh; ?>
-          <rect class="s-<?= $k ?>" x="<?= round($x, 1) ?>" y="<?= round($y, 1) ?>" width="<?= round($bar, 1) ?>" height="<?= round(max($bh - 1, 0.5), 1) ?>" rx="2"/>
-        <?php endforeach; ?>
-        </g>
-        <text class="axis" x="<?= round($x + $bar / 2, 1) ?>" y="<?= $h + 16 ?>" text-anchor="middle"><?= $jours[(int) date('N', strtotime($date))] . date('j', strtotime($date)) ?></text>
-      <?php $i++; endforeach; ?>
-    </svg>
-    <ul class="legend">
-      <?php foreach ($series as $k => $label): ?><li><span class="swatch s-<?= $k ?>"></span><?= e($label) ?></li><?php endforeach; ?>
-    </ul>
+    <div class="donuts">
+      <figure class="donut-block">
+        <figcaption>Présents et absents<small class="muted block">agents attendus</small></figcaption>
+        <?= $donut(['present_pct', 's-present', $kpis['present_pct']], ['absent_pct', 's-absent', $kpis['absent_pct']], 'Présents : ' . $kpis['present_pct'] . ' %, absents : ' . $kpis['absent_pct'] . ' %') ?>
+        <ul class="legend">
+          <li><span class="swatch s-present"></span>Présents <strong data-kpi="arrived"><?= $kpis['arrived'] ?></strong> · <span data-kpi="present_pct"><?= $kpis['present_pct'] ?></span> %</li>
+          <li><span class="swatch s-absent"></span>Absents <strong data-kpi="absent"><?= $kpis['absent'] ?></strong> · <span data-kpi="absent_pct"><?= $kpis['absent_pct'] ?></span> %</li>
+        </ul>
+      </figure>
+      <figure class="donut-block">
+        <figcaption>À l'heure et en retard<small class="muted block">agents arrivés</small></figcaption>
+        <?= $donut(['ontime_pct', 's-present', $kpis['ontime_pct']], ['late_pct', 's-retard', $kpis['late_pct']], 'À l\'heure : ' . $kpis['ontime_pct'] . ' %, en retard : ' . $kpis['late_pct'] . ' %') ?>
+        <ul class="legend">
+          <li><span class="swatch s-present"></span>À l'heure <strong data-kpi="ontime"><?= $kpis['ontime'] ?></strong> · <span data-kpi="ontime_pct"><?= $kpis['ontime_pct'] ?></span> %</li>
+          <li><span class="swatch s-retard"></span>En retard <strong data-kpi="late"><?= $kpis['late'] ?></strong> · <span data-kpi="late_pct"><?= $kpis['late_pct'] ?></span> %</li>
+        </ul>
+      </figure>
+    </div>
   </section>
 
   <section class="card">

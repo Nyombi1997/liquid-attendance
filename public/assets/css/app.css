@@ -3,6 +3,8 @@
    Boutons et champs : coins arrondis à 5 px maximum */
 
 :root {
+  /* Thème clair uniquement : empêche le mode sombre automatique des téléphones */
+  color-scheme: only light;
   --primary: #273c88;
   --primary-700: #1c2c66;
   --primary-600: #22357a;
@@ -224,12 +226,24 @@ a.list-item:hover { text-decoration: none; background: var(--primary-50); }
 .pick-list li[hidden] { display: none; }
 
 /* ---------- Graphique ---------- */
-.chart { width: 100%; height: auto; display: block; }
-.chart .grid { stroke: var(--border); stroke-width: 1; }
-.chart .axis { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+.donuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.donut-block { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.donut-block figcaption { font-weight: 600; font-size: 13.5px; }
+.donut-block figcaption small { font-weight: 400; font-size: 12px; }
+.donut-block .legend { flex-direction: column; align-items: flex-start; margin: 0; }
+.donut-block .legend strong { color: var(--text); }
+.donut { position: relative; width: 100%; max-width: 190px; aspect-ratio: 1; }
+.donut svg { width: 100%; height: 100%; display: block; }
+.donut circle { fill: none; stroke-width: 6; }
+.donut .donut-track { stroke: var(--border); }
+.donut .donut-seg { transition: stroke-dasharray .6s ease, stroke-dashoffset .6s ease; }
+.donut .s-present { stroke: var(--primary); }
+.donut .s-retard { stroke: var(--late); }
+.donut .s-absent { stroke: #ccd1e2; }
+.donut-center { position: absolute; inset: 0; display: grid; place-content: center; font-size: 15px; color: var(--muted); }
+.donut-center strong { font-size: 30px; color: var(--text); letter-spacing: -.02em; }
 .s-present { fill: var(--primary); background: var(--primary); }
 .s-retard { fill: var(--late); background: var(--late); }
-.s-incomplet { fill: var(--accent); background: var(--accent); }
 .s-absent { fill: #ccd1e2; background: #ccd1e2; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 10px 0 0; padding: 0; color: var(--muted); font-size: 12.5px; }
 .legend li { display: flex; align-items: center; gap: 6px; }
@@ -456,7 +470,9 @@ button.agent-status:hover { background: var(--primary-50); }
 .cal-head { position: sticky; top: 0; z-index: 4; background: #fafbfe; color: var(--muted); font-size: 12px; font-weight: 600; }
 .cal-head .cal-agent-head { position: sticky; left: 0; background: #fafbfe; border-right: 1px solid var(--border); }
 .cal-hours { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); }
-.cal-hours span { padding: 10px 0; text-align: center; border-left: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.cal-hours span { padding: 10px 0; text-align: center; border-left: 1px solid var(--border); font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.cal-hours span small { font-size: 10px; color: var(--muted); margin-left: 1px; }
+.cal-hours span.is-now small { color: inherit; }
 .cal-hours span.is-now { background: var(--warn-bg); color: var(--warn); }
 .cal-track { position: relative; min-height: 50px; background: #eef0f6; }
 .cal-track::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; background-image: linear-gradient(to right, var(--border) 1px, transparent 1px); background-size: calc(100% / 24) 100%; }
@@ -576,6 +592,8 @@ td.cal-cell.is-today { outline: 2px solid var(--warn-bg); outline-offset: -2px; 
   .status-options { grid-template-columns: 1fr; }
 }
 @media (max-width: 420px) {
+  .donuts { gap: 12px; }
+  .donut-center strong { font-size: 24px; }
   .agent-photo { width: 88px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; animation: none !important; } }

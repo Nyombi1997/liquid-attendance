@@ -15,7 +15,8 @@ use App\Modules\Platform\Services\Departments;
  */
 final class DailyController extends Controller
 {
-    private const STATUSES = ['present', 'retard', 'absent', 'sortie_manquante', 'en_cours', 'repos', 'hors_horaire'];
+    // « venus » : tous les agents qui ont badgé une entrée ce jour-là, même déjà sortis
+    private const STATUSES = ['venus', 'present', 'retard', 'absent', 'sortie_manquante', 'en_cours', 'repos', 'hors_horaire'];
 
     public function index(): void
     {
@@ -91,7 +92,9 @@ final class DailyController extends Controller
             $where[] = 'e.group_id = ?';
             $params[] = $f['group'];
         }
-        if ($f['status']) {
+        if ($f['status'] === 'venus') {
+            $where[] = 'd.first_in IS NOT NULL';
+        } elseif ($f['status']) {
             $where[] = 'd.status = ?';
             $params[] = $f['status'];
         } else {

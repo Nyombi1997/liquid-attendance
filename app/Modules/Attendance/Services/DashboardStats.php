@@ -15,13 +15,17 @@ use App\Modules\Platform\Services\Departments;
  */
 final class DashboardStats
 {
-    /** Indicateurs du jour : présents / attendus, taux, retards, absents, sorties manquantes. */
+    /**
+     * Indicateurs du jour : présents / attendus, taux, retards, absents, sorties manquantes,
+     * et parts (en %) des deux camemberts : présents / absents, à l'heure / en retard.
+     */
     public static function kpis(string $today, ?array $scope = null): array
     {
         $day = Database::one(
             "SELECT COALESCE(SUM(d.first_in IS NOT NULL), 0) arrived,
                     COALESCE(SUM(d.expected_start IS NOT NULL), 0) expected,
                     COALESCE(SUM(d.late_minutes > 0), 0) late,
+                    COALESCE(SUM(d.first_in IS NOT NULL AND d.late_minutes = 0), 0) ontime,
                     COALESCE(SUM(d.status = 'absent'), 0) absent
                FROM attendance_days d JOIN employees e ON e.id = d.employee_id
               WHERE e.active = 1 AND d.work_date = ?" . Departments::sql($scope),
@@ -34,39 +38,23 @@ final class DashboardStats
         );
         $arrived = (int) $day['arrived'];
         $expected = (int) $day['expected'];
+        $absent = (int) $day['absent'];
+        $late = (int) $day['late'];
+        $pct = static fn(int $part, int $total) => $total > 0 ? (int) round($part / $total * 100) : 0;
         return [
             'arrived'  => $arrived,
             'expected' => $expected,
             'rate'     => $expected > 0 ? (int) round($arrived / $expected * 100) : 0,
-            'late'     => (int) $day['late'],
-            'absent'   => (int) $day['absent'],
+            'late'     => $late,
+            'ontime'   => (int) $day['ontime'],
+            'absent'   => $absent,
             'pending'  => $pending,
+            // Camemberts : présents parmi (présents + absents), retards parmi les arrivés
+            'present_pct' => $pct($arrived, $arrived + $absent),
+            'absent_pct'  => $arrived + $absent > 0 ? 100 - $pct($arrived, $arrived + $absent) : 0,
+            'late_pct'    => $pct($late, $arrived),
+            'ontime_pct'  => $arrived > 0 ? 100 - $pct($late, $arrived) : 0,
         ];
-    }
-
-    /** Tendance sur 14 jours (barres empilées du tableau de bord). */
-    public static function trend(string $today, ?array $scope = null): array
-    {
-        $from = date('Y-m-d', strtotime($today . ' -13 days'));
-        $rows = Database::all(
-            "SELECT work_date,
-                    SUM(status = 'present' OR status = 'hors_horaire') present,
-                    SUM(status = 'retard') retard,
-                    SUM(status = 'sortie_manquante' OR status = 'en_cours') incomplet,
-                    SUM(status = 'absent') absent
-               FROM attendance_days d JOIN employees e ON e.id = d.employee_id
-              WHERE e.active = 1 AND work_date BETWEEN ? AND ?" . Departments::sql($scope) . "
-              GROUP BY work_date ORDER BY work_date",
-            [$from, $today]
-        );
-        $trend = [];
-        for ($t = strtotime($from); $t <= strtotime($today); $t += 86400) {
-            $trend[date('Y-m-d', $t)] = ['present' => 0, 'retard' => 0, 'incomplet' => 0, 'absent' => 0];
-        }
-        foreach ($rows as $row) {
-            $trend[$row['work_date']] = array_map('intval', array_diff_key($row, ['work_date' => 1]));
-        }
-        return $trend;
     }
 
     /** Derniers pointages, du plus récent au plus ancien (sans les agents désactivés). */

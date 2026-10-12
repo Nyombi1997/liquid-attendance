@@ -6,7 +6,7 @@
   <?php if (can('manage')): ?><a class="btn btn-outline" href="/groupes"><?= icon('layers') ?> Gérer les groupes</a><?php endif; ?>
 </div>
 
-<form class="filters card" method="get" action="/employes">
+<form class="filters card" method="get" action="/employes" data-auto-filter>
   <label class="field field-grow"><span>Recherche</span><input type="search" name="q" value="<?= e($q) ?>" placeholder="Nom, matricule ou numéro de pointeuse" data-suggest="go"></label>
   <label class="field"><span>Groupe</span>
     <select name="group"><option value="">Tous</option><option value="aucun" <?= $group === 'aucun' ? 'selected' : '' ?>>Sans groupe</option>
@@ -16,7 +16,6 @@
     <select name="etat">
       <?php foreach (['actifs' => 'Actifs', 'inactifs' => 'Inactifs', 'tous' => 'Tous'] as $k => $l): ?><option value="<?= $k ?>" <?= $state === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
     </select></label>
-  <button class="btn btn-primary" type="submit"><?= icon('filter') ?> Filtrer</button>
 </form>
 
 <form method="post" action="/employes/groupe" id="bulk-form">

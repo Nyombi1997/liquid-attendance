@@ -18,6 +18,7 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Plateforme « en direct » (badge visible en moins de 10 s sans recharger : API `/api/direct`, notifications, indicateur « En direct ») | **Fait** le 9 oct. 2026, testé en local (faux `zk`, MariaDB, Chrome) ; **à valider sur la VM** avec les vraies pointeuses (migration `001_live.sql` à appliquer avant la reconstruction) |
 | Droits des RH réduits, recherche avec propositions, affichage des mots de passe, identifiants insensibles à la casse | **Fait** le 12 oct. 2026, testé en local ; migration `003_identifiants.sql` à appliquer sur la VM |
 | Calendrier de présence (jour / semaine / mois, temps en direct, raisons d'absence, absents en rouge), cloche des notifications (« 9+ »), Employés pour les managers, photo cliquable et modifiable depuis la fiche, menus RH et managers réduits | **Fait** le 12 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px) ; migration `004_calendrier.sql` à appliquer sur la VM |
+| Tableau de bord en camemberts (présents / absents, à l'heure / en retard, en %), filtres appliqués sans bouton, filtre « Présents (même sortis) », heures « 00h…23h » du calendrier, reprise du direct au déverrouillage du téléphone, thème clair forcé | **Fait** le 12 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px) ; aucune migration |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
@@ -146,6 +147,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 - Couleurs : **#273c88** (principale) et **#c8187d** (accent).
 - Style des maquettes de référence : menu latéral coloré, cartes blanches, tableaux aérés, indicateurs en haut du tableau de bord.
 - Boutons et champs : coins arrondis à 5 px maximum. Interface en français.
+- Thème clair uniquement, même si le téléphone est en mode sombre.
 
 ## Sécurité
 

@@ -5,7 +5,7 @@ use App\Modules\Attendance\Services\Calendar;
 /** @var string[] $dates */
 $isDay = $view === 'jour';
 $link = static fn(array $over) => url('/calendrier', array_filter(array_merge(
-    ['vue' => $view, 'date' => $date, 'dep' => $dep ?: null, 'q' => $q !== '' ? $q : null], $over
+    ['vue' => $view, 'date' => $date, 'dep' => $dep ?: null, 'presence' => $presence ?: null, 'q' => $q !== '' ? $q : null], $over
 )));
 $mois = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 $period = match ($view) {
@@ -38,7 +38,7 @@ $cellIcon = static function (array $c): string {
   </div>
 </div>
 
-<form class="filters card cal-filters" method="get" action="/calendrier">
+<form class="filters card cal-filters" method="get" action="/calendrier" data-auto-filter>
   <input type="hidden" name="vue" value="<?= e($view) ?>">
   <div class="cal-nav">
     <a class="btn btn-ghost" href="<?= e($link(['date' => $prev])) ?>" aria-label="Période précédente"><?= icon('chevron-left') ?></a>
@@ -52,18 +52,22 @@ $cellIcon = static function (array $c): string {
       <?php foreach ($departments as $d): ?><option value="<?= (int) $d['id'] ?>" <?= $dep === (int) $d['id'] ? 'selected' : '' ?>><?= str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) ?></option><?php endforeach; ?>
     </select></label>
   <?php endif; ?>
+  <label class="field"><span>Présence</span>
+    <select name="presence">
+      <option value="">Tous les agents</option>
+      <option value="venus" <?= $presence === 'venus' ? 'selected' : '' ?>><?= $isDay ? 'Présents (même sortis)' : 'Venus (même sortis)' ?></option>
+    </select></label>
   <label class="field field-grow"><span>Agent</span><input type="search" name="q" value="<?= e($q) ?>" placeholder="Nom, titre ou matricule" data-suggest="submit"></label>
-  <button class="btn btn-primary" type="submit"><?= icon('filter') ?> Afficher</button>
 </form>
 
-<section class="card cal-card" data-calendar data-server-time="<?= e($now) ?>" data-cal-date="<?= e($isDay ? $date : '') ?>" data-cal-today="<?= e($today) ?>">
+<section class="card cal-card" data-calendar data-cal-presence="<?= e($presence) ?>" data-server-time="<?= e($now) ?>" data-cal-date="<?= e($isDay ? $date : '') ?>" data-cal-today="<?= e($today) ?>">
   <div class="cal-scroll">
   <?php if ($isDay): ?>
     <div class="cal-day" role="table" aria-label="Présence de <?= e(date_fr($date)) ?>, de 0 h à 24 h">
       <div class="cal-row cal-head" role="row">
-        <div class="cal-agent-head" role="columnheader">Agents</div>
+        <div class="cal-agent-head" role="columnheader">Agents <small class="muted">/ heures</small></div>
         <div class="cal-hours" role="columnheader">
-          <?php for ($h = 0; $h < 24; $h++): ?><span<?= $date === $today && (int) date('G', strtotime($now)) === $h ? ' class="is-now"' : '' ?>><?= $h ?></span><?php endfor; ?>
+          <?php for ($h = 0; $h < 24; $h++): ?><span title="<?= sprintf('De %02d h à %02d h', $h, $h + 1) ?>"<?= $date === $today && (int) date('G', strtotime($now)) === $h ? ' class="is-now"' : '' ?>><?= sprintf('%02d', $h) ?><small>h</small></span><?php endfor; ?>
         </div>
       </div>
       <?php foreach ($rows as $r): $c = $r['cells'][$date]; ?>

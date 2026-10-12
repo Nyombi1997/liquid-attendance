@@ -1,6 +1,6 @@
 <?php
 $full = can('view'); // false : manager, journée du jour et son département uniquement
-$statuses = ['present' => 'Présent', 'retard' => 'Retard', 'absent' => 'Absent', 'sortie_manquante' => 'Sortie manquante',
+$statuses = ['venus' => 'Présents (même sortis)', 'present' => 'Présent', 'retard' => 'Retard', 'absent' => 'Absent', 'sortie_manquante' => 'Sortie manquante',
     'en_cours' => 'En cours', 'hors_horaire' => 'Hors horaire', 'repos' => 'Repos'];
 if (!$full) {
     unset($statuses['sortie_manquante']);
@@ -28,7 +28,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
   <?php endif; ?>
 </div>
 
-<form class="filters card" method="get" action="/presence">
+<form class="filters card" method="get" action="/presence" data-auto-filter>
   <?php if ($full): ?>
   <label class="field"><span>Du</span><input type="date" name="from" value="<?= e($filters['from']) ?>"></label>
   <label class="field"><span>Au</span><input type="date" name="to" value="<?= e($filters['to']) ?>"></label>
@@ -48,7 +48,6 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
       <?php foreach ($statuses as $k => $l): ?><option value="<?= $k ?>" <?= $filters['status'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
     </select></label>
   <label class="field field-grow"><span>Employé</span><input type="search" name="q" value="<?= e($filters['q']) ?>" placeholder="Nom, matricule ou numéro" data-suggest="submit"></label>
-  <button class="btn btn-primary" type="submit"><?= icon('filter') ?> Filtrer</button>
 </form>
 
 <div class="summary">

@@ -41,6 +41,7 @@ storage/                     fichiers déposés (photos) ; en production volume 
 - Accueil après connexion : `Auth::home()` (`/agents` pour `ceo` et `manager`, `/` sinon). Le menu de `app/Views/layout.php` dépend du rôle.
 
 ### Composants automatiques (app.js)
+- Formulaire de filtres : `<form class="filters card" method="get" data-auto-filter>` sans bouton « Filtrer » ; listes et dates appliquées à chaque changement, recherche à l'Entrée ou à la sortie du champ.
 - Tout `input[type=password]` reçoit un bouton « œil » (afficher / masquer) : rien à ajouter dans les vues.
 - Barre de recherche d'agents : ajouter `data-suggest="go"` (ouvre la fiche), `"submit"` (remplit et envoie le filtre) ou `"filter"` (filtre instantané de la page Agents). Les propositions viennent de `/api/suggestions` (périmètre appliqué côté serveur).
 

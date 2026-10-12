@@ -5,14 +5,13 @@
   </div>
 </div>
 
-<form class="filters card" method="get" action="/acces">
+<form class="filters card" method="get" action="/acces" data-auto-filter>
   <label class="field"><span>Date</span><input type="date" name="date" value="<?= e($date) ?>"></label>
   <label class="field"><span>Salle</span>
     <select name="device"><option value="0">Toutes</option>
       <?php foreach ($devices as $d): ?><option value="<?= (int) $d['id'] ?>" <?= $device === (int) $d['id'] ? 'selected' : '' ?>><?= e($d['name']) ?></option><?php endforeach; ?>
     </select></label>
   <label class="field field-grow"><span>Employé</span><input type="search" name="q" value="<?= e($q) ?>" placeholder="Nom ou numéro" data-suggest="submit"></label>
-  <button class="btn btn-primary" type="submit"><?= icon('filter') ?> Filtrer</button>
 </form>
 
 <section class="card table-card">

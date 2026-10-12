@@ -18,7 +18,6 @@ final class DashboardController extends Controller
             'today'   => $today,
             'scoped'  => $scope !== null,
             'kpis'    => DashboardStats::kpis($today, $scope),
-            'trend'   => DashboardStats::trend($today, $scope),
             'punches' => DashboardStats::latestPunches(8, $scope),
             'lates'   => DashboardStats::lates($today, $scope),
             // Pointeuses : hors du périmètre d'un manager

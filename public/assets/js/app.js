@@ -234,6 +234,27 @@
     });
   });
 
+  // Filtres appliqués dès qu'un champ change (pas de bouton « Filtrer ») :
+  // listes et dates à chaque changement, recherche à la validation (Entrée,
+  // sortie du champ, proposition choisie) ou quand elle est vidée.
+  $$('form[data-auto-filter]').forEach((form) => {
+    const send = () => { if (form.requestSubmit) form.requestSubmit(); else form.submit(); };
+    $$('select', form).forEach((sel) => sel.addEventListener('change', send));
+    $$('input[type="date"]', form).forEach((input) => input.addEventListener('change', () => {
+      // Saisie au clavier : attendre une année complète (pas « 0002 »)
+      const year = parseInt(input.value.slice(0, 4), 10);
+      if (input.value === '' || (year >= 2000 && year <= 2100)) send();
+    }));
+    $$('input[type="search"], input[type="text"]', form).forEach((input) => {
+      const initial = input.value;
+      input.addEventListener('change', () => { if (input.value !== initial) send(); });
+      input.addEventListener('input', () => { if (input.value === '' && initial !== '') send(); });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.defaultPrevented) { e.preventDefault(); send(); }
+      });
+    });
+  });
+
   // Formulaire d'attribution : afficher les champs selon la cible
   const assign = document.querySelector('[data-assign]');
   if (assign) {
@@ -624,8 +645,11 @@
       if (busy) return;
       busy = true;
       try {
+        // Délai de 15 s : une requête restée bloquée pendant la veille du
+        // téléphone ne doit pas arrêter la cloche.
         const res = await fetch(`/api/notifications?after=${seen}`, {
           headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin',
+          signal: window.AbortSignal?.timeout ? AbortSignal.timeout(15000) : undefined,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -738,7 +762,8 @@
     };
     rootEl.liveDays = (days) => {
       const shown = new Set($$('[data-employee-id]', rootEl).map((n) => Number(n.dataset.employeeId)));
-      if (!days.some((d) => shown.has(d.employee_id)) || pending) return;
+      const venus = rootEl.dataset.calPresence === 'venus';
+      if (!days.some((d) => shown.has(d.employee_id) || (venus && d.first_in)) || pending) return;
       pending = true;
       setTimeout(reload, Math.max(0, 20000 - (Date.now() - last)));
     };
@@ -760,6 +785,7 @@
       lastOk: Date.now(),
       failures: 0,
       busy: false,
+      ctrl: null,         // AbortController de la requête en cours
       timer: null,
     };
     const ERROR_DELAYS = [10000, 30000, 60000];
@@ -832,6 +858,17 @@
           n.textContent = v;
           replay(n, 'is-bumped', 700);
         }
+      });
+      // Camemberts : pourcentages calculés par le serveur (DashboardStats::kpis)
+      $$('[data-donut]').forEach((box) => {
+        const [ka, kb] = box.dataset.donut.split(' ');
+        const a = Number(k[ka]) || 0;
+        const b = Number(k[kb]) || 0;
+        const segA = box.querySelector('[data-donut-a]');
+        const segB = box.querySelector('[data-donut-b]');
+        segA.setAttribute('stroke-dasharray', `${a} ${100 - a}`);
+        segB.setAttribute('stroke-dasharray', `${b} ${100 - b}`);
+        segB.setAttribute('stroke-dashoffset', String(-a));
       });
       const meter = document.querySelector('[data-kpi-meter]');
       if (meter) {
@@ -946,7 +983,7 @@
       const q = fold(root.dataset.liveQ);
       return (!group || d.group_id === group)
         && (!deps.length || deps.includes(d.department_id))
-        && (st ? d.status === st : d.status !== 'repos')
+        && (st === 'venus' ? Boolean(d.first_in) : (st ? d.status === st : d.status !== 'repos'))
         && (!q || fold(d.name).includes(q) || fold(d.matricule).includes(q) || d.device_user_id === root.dataset.liveQ);
     };
     const updateRows = (days) => {
@@ -1051,10 +1088,15 @@
     async function poll() {
       if (state.busy) return;
       state.busy = true;
+      // Requête bloquée (téléphone verrouillé, réseau en veille) : abandon
+      // au bout de 15 s pour ne jamais rester coincé.
+      const ctrl = new AbortController();
+      state.ctrl = ctrl;
+      const guard = setTimeout(() => ctrl.abort(), 15000);
       try {
         const qs = new URLSearchParams({ since_punch: state.punch, since_day: state.day });
         const res = await fetch(`/api/direct?${qs}`, {
-          headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin',
+          headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin', signal: ctrl.signal,
         });
         if (res.status === 401) {
           window.location.href = '/connexion';
@@ -1067,20 +1109,45 @@
         setOnline(true);
         schedule(document.hidden ? 60000 : 5000);
       } catch (e) {
-        state.failures += 1;
-        setOnline(false);
-        schedule(ERROR_DELAYS[Math.min(state.failures, ERROR_DELAYS.length) - 1]);
+        if (state.ctrl !== ctrl) return; // remplacée par une reprise (resume)
+        // Échec pendant que la page est cachée (écran verrouillé) : normal,
+        // pas d'alerte « Hors ligne » ; nouvel essai dès le retour.
+        if (document.hidden) {
+          schedule(60000);
+        } else {
+          state.failures += 1;
+          // Une seule erreur peut venir du réveil du réseau : « Hors ligne »
+          // seulement à partir de la deuxième.
+          if (state.failures >= 2 || !navigator.onLine) setOnline(false);
+          schedule(state.failures === 1 ? 2000 : ERROR_DELAYS[Math.min(state.failures - 1, ERROR_DELAYS.length) - 1]);
+        }
       } finally {
-        state.busy = false;
+        clearTimeout(guard);
+        if (state.ctrl === ctrl) {
+          state.ctrl = null;
+          state.busy = false;
+        }
         tick();
       }
     }
 
-    // Onglet de nouveau visible : mise à jour immédiate (sauf pendant les
-    // délais d'attente après une erreur).
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && state.failures === 0) poll();
-    });
+    // Retour sur la page (déverrouillage du téléphone, onglet de nouveau
+    // visible, page restaurée, réseau revenu) : on relance tout de suite le
+    // direct, en abandonnant une requête restée bloquée pendant la veille.
+    const resume = () => {
+      if (document.hidden) return;
+      if (state.ctrl) {
+        state.ctrl.abort();
+        state.ctrl = null;
+        state.busy = false;
+      }
+      state.failures = 0;
+      poll();
+    };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
+    window.addEventListener('online', resume);
+    window.addEventListener('focus', () => { if (Date.now() - state.lastOk > 10000) resume(); });
     tick();
     schedule(5000);
   }

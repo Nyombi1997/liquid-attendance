@@ -18,6 +18,8 @@ use App\Modules\Platform\Services\Departments;
  *   vue=jour    : ligne des heures de 0 h à 24 h (barre arrivée → départ)
  *   vue=semaine : 7 jours, vue=mois : le mois entier (une case par jour)
  * Managers : agents de leur département seulement (Auth::departmentScope()).
+ * presence=venus : seulement les agents venus au bureau (badge d'entrée) dans
+ * la période, même s'ils sont déjà sortis.
  */
 final class CalendarController extends Controller
 {
@@ -45,6 +47,7 @@ final class CalendarController extends Controller
             $dep = 0;
         }
         $q = mb_substr((string) $this->input('q', ''), 0, 60);
+        $presence = $this->input('presence') === 'venus' ? 'venus' : '';
 
         $where = 'e.active = 1' . Departments::sql($scope) . ($dep ? Departments::sql(Departments::descendants($dep)) : '');
         $params = [];
@@ -80,6 +83,9 @@ final class CalendarController extends Controller
         $rows = [];
         foreach ($employees as $e) {
             $id = (int) $e['id'];
+            if ($presence === 'venus' && !array_filter($days[$id] ?? [], static fn(array $d) => $d['first_in'] !== null)) {
+                continue;
+            }
             $cells = [];
             $total = 0;
             $absent = 0;
@@ -110,6 +116,7 @@ final class CalendarController extends Controller
             'rows'    => $rows,
             'dep'     => $dep,
             'q'       => $q,
+            'presence' => $presence,
             'today'   => $today,
             'now'     => $now,
             'departments' => Departments::tree(Departments::roots($scope)),
