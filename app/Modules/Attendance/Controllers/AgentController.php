@@ -5,11 +5,12 @@ namespace App\Modules\Attendance\Controllers;
 
 use App\Core\Audit;
 use App\Core\Auth;
-use App\Core\Config;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Modules\Attendance\Services\AgentPhoto;
 use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
+use App\Modules\Attendance\Services\WorkStatuses;
 use App\Modules\Platform\Services\Departments;
 
 /**
@@ -17,13 +18,11 @@ use App\Modules\Platform\Services\Departments;
  * travail, heure d'arrivée du jour), filtrable par département.
  * Managers : leur département seulement (Auth::departmentScope()).
  * Modification de la fiche et de la photo : droit « manage » (administrateur) ;
- * disponibilité (statut de travail) : droit « status » (administrateur et RH).
+ * disponibilité (statut de travail) : droit « status » (administrateur et RH),
+ * conservée dans l'historique work_statuses (affiché par le calendrier).
  */
 final class AgentController extends Controller
 {
-    private const PHOTO_MAX_BYTES = 1_500_000;
-    private const PHOTO_SIZE = [128, 1024]; // côté de l'image recadrée, en pixels
-
     public function index(): void
     {
         $today = date('Y-m-d');
@@ -108,7 +107,7 @@ final class AgentController extends Controller
         session_write_close();
         $emp = Database::one('SELECT id, department_id, photo_updated_at FROM employees WHERE id = ?', [$id]);
         $scope = Auth::departmentScope();
-        $file = $this->photoPath($id);
+        $file = AgentPhoto::path($id);
         if (!$emp || !$emp['photo_updated_at'] || !is_file($file)
             || ($scope !== null && !in_array((int) $emp['department_id'], $scope, true))) {
             http_response_code(404);
@@ -141,11 +140,7 @@ final class AgentController extends Controller
             default => null,
         };
 
-        $photo = (string) ($_POST['photo_data'] ?? '');
-        $jpeg = null;
-        if (!$error && $photo !== '') {
-            [$jpeg, $error] = $this->decodePhoto($photo);
-        }
+        $error ??= AgentPhoto::check();
         if ($error) {
             flash('error', $error);
             $this->redirect($back);
@@ -156,15 +151,7 @@ final class AgentController extends Controller
             [$data['name'], $data['job_title'], $data['email'], $data['phone'], $data['department_id'], $id]
         );
 
-        $photoChange = null;
-        if ($jpeg !== null) {
-            $this->savePhoto($id, $jpeg);
-            $photoChange = 'nouvelle';
-        } elseif (isset($_POST['photo_remove']) && $emp['photo_updated_at']) {
-            @unlink($this->photoPath($id));
-            Database::run('UPDATE employees SET photo_updated_at = NULL WHERE id = ?', [$id]);
-            $photoChange = 'retirée';
-        }
+        [$photoChange] = AgentPhoto::fromForm($emp);
 
         Audit::log('agent_modifie', array_filter([
             'id' => $id, 'nom' => $data['name'], 'titre' => $data['job_title'], 'departement' => $data['department_id'],
@@ -186,6 +173,7 @@ final class AgentController extends Controller
         if ($status === '') {
             Database::run('UPDATE employees SET work_status = NULL, work_status_until = NULL, work_status_note = NULL,
                            work_status_by = ?, work_status_at = NOW() WHERE id = ?', [Auth::id(), $id]);
+            WorkStatuses::record($id, null, null, null);
             Audit::log('agent_statut', ['id' => $id, 'statut' => 'automatique']);
             flash('success', $emp['name'] . ' : statut automatique (au bureau dès le premier badge).');
             $this->redirect($back);
@@ -204,54 +192,11 @@ final class AgentController extends Controller
               WHERE id = ?',
             [$status, $until ?: null, $note, Auth::id(), $id]
         );
+        WorkStatuses::record($id, $status, $until ?: null, $note);
         Audit::log('agent_statut', ['id' => $id, 'statut' => $status, 'jusqu_au' => $until ?: null, 'note' => $note]);
         flash('success', $emp['name'] . ' : ' . mb_strtolower(AgentStatus::WORK[$status][0])
             . ($until ? ' jusqu\'au ' . date('d/m/Y', strtotime($until)) : '') . '.');
         $this->redirect($back);
-    }
-
-    /**
-     * Photo envoyée par le recadrage du navigateur (data:image/jpeg;base64,…).
-     * Le navigateur a déjà redessiné l'image (métadonnées EXIF supprimées) ;
-     * on vérifie ici que c'est bien un JPEG carré de taille raisonnable.
-     *
-     * @return array{0:?string, 1:?string} [contenu JPEG, erreur]
-     */
-    private function decodePhoto(string $data): array
-    {
-        if (!preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', $data, $m)) {
-            return [null, 'Format de photo non reconnu.'];
-        }
-        $bin = base64_decode($m[1], true);
-        if ($bin === false || strlen($bin) > self::PHOTO_MAX_BYTES) {
-            return [null, 'Photo trop lourde (1,5 Mo maximum).'];
-        }
-        $info = @getimagesizefromstring($bin);
-        [$min, $max] = self::PHOTO_SIZE;
-        if (!$info || $info[2] !== IMAGETYPE_JPEG || $info[0] !== $info[1] || $info[0] < $min || $info[0] > $max) {
-            return [null, 'Photo invalide.'];
-        }
-        return [$bin, null];
-    }
-
-    private function savePhoto(int $id, string $jpeg): void
-    {
-        $file = $this->photoPath($id);
-        $dir = dirname($file);
-        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-            throw new \RuntimeException("Dossier des photos inaccessible : $dir");
-        }
-        $tmp = $file . '.' . bin2hex(random_bytes(4)) . '.tmp';
-        if (file_put_contents($tmp, $jpeg) === false || !rename($tmp, $file)) {
-            @unlink($tmp);
-            throw new \RuntimeException("Écriture de la photo impossible : $file");
-        }
-        Database::run('UPDATE employees SET photo_updated_at = NOW() WHERE id = ?', [$id]);
-    }
-
-    private function photoPath(int $id): string
-    {
-        return rtrim((string) Config::get('storage_path'), '/') . '/photos/' . $id . '.jpg';
     }
 
     /** Retour à la page Agents avec les mêmes filtres (adresse locale uniquement). */

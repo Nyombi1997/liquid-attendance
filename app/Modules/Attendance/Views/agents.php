@@ -96,11 +96,13 @@ foreach ($tree['nodes'] as $n) {
                data-manual-status="<?= $w['manual'] ? e($a['work_status']) : '' ?>"
                <?php if ($manage || $editStatus): ?>data-agent-json="<?= e(json_encode($json, JSON_UNESCAPED_UNICODE)) ?>"<?php endif; ?>>
         <div class="agent-photo">
+          <a class="agent-photo-link" href="/employes/<?= (int) $a['id'] ?>" title="Voir la fiche de <?= e($a['name']) ?>">
           <?php if ($photo): ?>
-            <img src="<?= e($photo) ?>" alt="Photo de <?= e($a['name']) ?>" loading="lazy" width="112" height="112">
+            <img src="<?= e($photo) ?>" alt="Fiche de <?= e($a['name']) ?>" loading="lazy" width="112" height="112">
           <?php else: ?>
-            <span class="agent-initials" aria-hidden="true"><?= e(initials($a['name'])) ?></span>
+            <span class="agent-initials"><span aria-hidden="true"><?= e(initials($a['name'])) ?></span><span class="visually-hidden">Fiche de <?= e($a['name']) ?></span></span>
           <?php endif; ?>
+          </a>
           <?php if ($manage): ?>
             <button type="button" class="agent-photo-edit" data-agent-edit="photo" aria-label="Changer la photo de <?= e($a['name']) ?>"><?= fa('fa-solid fa-camera') ?></button>
           <?php endif; ?>
@@ -159,21 +161,7 @@ foreach ($tree['nodes'] as $n) {
     <input type="hidden" name="photo_data" data-crop-output>
     <h2>Modifier la fiche</h2>
     <div class="agent-edit-grid">
-      <div class="cropper" data-cropper>
-        <div class="crop-stage">
-          <canvas class="crop-canvas" width="240" height="240" tabindex="0" aria-label="Recadrage : faire glisser pour déplacer, molette ou curseur pour zoomer, flèches du clavier pour ajuster" data-crop-canvas></canvas>
-          <img class="crop-current" alt="" data-crop-current hidden>
-          <span class="crop-placeholder" data-crop-placeholder><?= fa('fa-solid fa-user') ?></span>
-        </div>
-        <label class="field crop-zoom" data-crop-zoom-field hidden><span><?= fa('fa-solid fa-magnifying-glass-plus') ?> Zoom</span>
-          <input type="range" min="1" max="4" step="0.01" value="1" data-crop-zoom></label>
-        <div class="crop-actions">
-          <label class="btn btn-outline btn-sm"><?= fa('fa-solid fa-upload') ?> Choisir une photo
-            <input type="file" accept="image/jpeg,image/png,image/webp" class="visually-hidden" data-crop-file></label>
-          <label class="check small" data-photo-remove-field hidden><input type="checkbox" name="photo_remove" value="1" data-photo-remove> Retirer la photo</label>
-        </div>
-        <p class="hint" data-crop-hint>JPEG, PNG ou WebP. Recadrée en carré dans le navigateur.</p>
-      </div>
+      <?php require __DIR__ . '/_photo_cropper.php'; ?>
       <div class="stack">
         <label class="field"><span>Nom affiché</span><input name="name" maxlength="120" required data-field="name"></label>
         <label class="field"><span>Titre / poste</span><input name="job_title" maxlength="120" placeholder="ex. Ingénieur réseau" data-field="job_title"></label>

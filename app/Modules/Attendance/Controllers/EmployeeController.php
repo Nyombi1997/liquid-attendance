@@ -7,10 +7,15 @@ use App\Core\Audit;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Modules\Attendance\Services\AgentPhoto;
 use App\Modules\Attendance\Services\AttendanceComputer;
 use App\Modules\Attendance\Services\ScheduleResolver;
 use App\Modules\Platform\Services\Departments;
 
+/**
+ * Liste et fiche des employés (droit « staff »), modification (« manage »).
+ * Managers : uniquement les agents de leur département (Auth::departmentScope()).
+ */
 final class EmployeeController extends Controller
 {
     public function index(): void
@@ -19,7 +24,7 @@ final class EmployeeController extends Controller
         $group = $this->input('group', '');
         $state = $this->input('etat', 'actifs');
 
-        $where = ['1 = 1'];
+        $where = ['1' . Departments::sql(Auth::departmentScope())];
         $params = [];
         if ($q !== '') {
             $where[] = '(e.name LIKE ? OR e.device_name LIKE ? OR e.matricule LIKE ? OR e.device_user_id = ?)';
@@ -59,7 +64,7 @@ final class EmployeeController extends Controller
      * Propositions des barres de recherche : GET /api/suggestions?q=…
      * Agents actifs dont le nom, le titre, le matricule ou le n° de pointeuse
      * correspond, dans le périmètre de l'utilisateur (managers : leur département).
-     * Lien de chaque proposition : fiche employé, ou page Agents sans droit « staff ».
+     * Lien de chaque proposition : fiche employé.
      */
     public function suggest(): void
     {
@@ -84,15 +89,14 @@ final class EmployeeController extends Controller
             [$like, $like, $like, $like, $q, addcslashes($q, '%_\\') . '%']
         );
 
-        $staff = Auth::can('staff');
-        $items = array_map(static function (array $r) use ($staff): array {
+        $items = array_map(static function (array $r): array {
             $dep = $r['department_id'] !== null ? (Departments::all()[(int) $r['department_id']]['name'] ?? null) : null;
             return [
                 'id'     => (int) $r['id'],
                 'name'   => $r['name'],
                 'detail' => implode(' · ', array_filter([$r['job_title'], $dep, 'n° ' . $r['device_user_id']])),
                 'photo'  => photo_url($r),
-                'url'    => $staff ? '/employes/' . (int) $r['id'] : '/agents?q=' . rawurlencode($r['name']),
+                'url'    => '/employes/' . (int) $r['id'],
             ];
         }, $rows);
         echo json_encode(['items' => $items], JSON_UNESCAPED_UNICODE);
@@ -101,7 +105,8 @@ final class EmployeeController extends Controller
     public function show(int $id): void
     {
         $emp = Database::one(
-            'SELECT e.*, g.name group_name FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id WHERE e.id = ?',
+            'SELECT e.*, g.name group_name FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id WHERE e.id = ?'
+                . Departments::sql(Auth::departmentScope()),
             [$id]
         ) ?? $this->notFound();
 
@@ -151,6 +156,7 @@ final class EmployeeController extends Controller
         $emp = Database::one('SELECT * FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
         $this->render('Attendance:employee_form', [
             'title'  => 'Modifier ' . $emp['name'],
+            'photo'  => photo_url($emp),
             'emp'    => $emp,
             'groups' => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
             'departments' => Departments::tree(),
@@ -184,6 +190,11 @@ final class EmployeeController extends Controller
         if ($data['department_id'] !== null && !isset(Departments::all()[$data['department_id']])) {
             $data['department_id'] = null;
         }
+        if ($error = AgentPhoto::check()) {
+            $this->withInput();
+            flash('error', $error);
+            $this->redirect("/employes/$id/modifier");
+        }
 
         Database::run(
             'UPDATE employees SET name = ?, job_title = ?, matricule = ?, email = ?, phone = ?, group_id = ?, department_id = ?, active = ?
@@ -191,7 +202,9 @@ final class EmployeeController extends Controller
             [$data['name'], $data['job_title'], $data['matricule'], $data['email'], $data['phone'], $data['group_id'],
                 $data['department_id'], $data['active'], $id]
         );
-        Audit::log('employe_modifie', ['id' => $id, 'avant' => $emp['name'], 'apres' => $data['name']]);
+        [$photoChange] = AgentPhoto::fromForm($emp);
+        Audit::log('employe_modifie', array_filter(['id' => $id, 'avant' => $emp['name'], 'apres' => $data['name'],
+            'photo' => $photoChange], static fn($v) => $v !== null));
 
         // Changement de groupe : l'horaire peut changer, on recalcule le mois en cours
         if ((int) $emp['group_id'] !== (int) $data['group_id']) {

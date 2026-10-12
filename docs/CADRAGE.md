@@ -17,6 +17,7 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Pointages en temps réel, remise à l'heure nocturne | **Fait** le 9 oct. 2026, testé avec un faux module `zk` |
 | Plateforme « en direct » (badge visible en moins de 10 s sans recharger : API `/api/direct`, notifications, indicateur « En direct ») | **Fait** le 9 oct. 2026, testé en local (faux `zk`, MariaDB, Chrome) ; **à valider sur la VM** avec les vraies pointeuses (migration `001_live.sql` à appliquer avant la reconstruction) |
 | Droits des RH réduits, recherche avec propositions, affichage des mots de passe, identifiants insensibles à la casse | **Fait** le 12 oct. 2026, testé en local ; migration `003_identifiants.sql` à appliquer sur la VM |
+| Calendrier de présence (jour / semaine / mois, temps en direct, raisons d'absence, absents en rouge), cloche des notifications (« 9+ »), Employés pour les managers, photo cliquable et modifiable depuis la fiche, menus RH et managers réduits | **Fait** le 12 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px) ; migration `004_calendrier.sql` à appliquer sur la VM |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
@@ -119,7 +120,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Front-end | HTML, CSS, JavaScript sans dépendance externe ; PWA installable |
 | Base | **MariaDB 11.4** + **phpMyAdmin** |
 | Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min). Calcul en PHP (mêmes règles que l'application) : journée de l'agent recalculée après chaque badge de présence (un appel au plus toutes les 5 s pour tous les agents en attente), et calcul global toutes les 5 min dans un thread à part. Horloges remises à l'heure de la VM chaque nuit à 03:00 |
-| Mode direct | API JSON `GET /api/direct` interrogée toutes les 5 s par les pages ouvertes (60 s onglet caché) : nouveaux pointages, journées modifiées, indicateurs, état des pointeuses. Mise à jour de la page sans rechargement, notifications désactivables |
+| Mode direct | API JSON `GET /api/direct` interrogée toutes les 5 s par les pages ouvertes (60 s onglet caché) : nouveaux pointages, journées modifiées, indicateurs, état des pointeuses. Mise à jour de la page sans rechargement. Notifications : cloche en haut à droite (badges du jour non lus, « 9+ »), `GET /api/notifications` toutes les 15 s sur toutes les pages |
 | Cache navigateur | Fichiers statiques versionnés par date de modification (`asset()`, `?v=`), cache d'un an ; service worker sans numéro de version à modifier |
 | Serveur | Docker Compose sur la VM, projet `liquid-attendance`, réseau Docker séparé d'ELK |
 | Accès | https://41.174.155.178:8443 (et https://10.169.153.144:8443 en interne) |
@@ -136,7 +137,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 - **Horaires** : saisis manuellement. Attribuables à tout le monde (horaire par défaut), à un groupe ou à un ou plusieurs agents, sur une période. Priorité agent > groupe > défaut. Horaires de nuit gérés.
 - Paramètres d'un horaire : début, fin, jours travaillés, pause déduite, tolérance de retard, seuil des heures supplémentaires.
 - **NOC et IT Room** : accès salle, historique séparé, non comptés dans la présence.
-- **Rôles** (révisés le 12 oct. 2026) : Administrateur (tout, seul à modifier fiches, employés, départements, groupes, horaires, corrections), RH (tableau de bord, Agents avec mise à jour de la disponibilité uniquement, Employés en consultation), Direction/CEO (tout voir, rien modifier), Manager (son département), Lecteur (consultation et export).
+- **Rôles** (révisés le 12 oct. 2026) : Administrateur (tout, seul à modifier fiches, employés, départements, groupes, horaires, corrections), RH (tableau de bord, Agents avec mise à jour de la disponibilité uniquement, Calendrier, Employés en consultation), Direction/CEO (tout voir sauf le calendrier, rien modifier), Manager (son département : Agents, tableau de bord, présence du jour, Calendrier, Employés), Lecteur (consultation et export). RH et managers ne voient ni les sorties manquantes ni les modules.
 - **Identifiants** : insensibles à la casse, enregistrés en minuscules (le mot de passe, lui, reste sensible à la casse).
 - Horaire par défaut provisoire : 08:00–17:00, lundi–vendredi, pause 60 min, tolérance 15 min, heures sup au-delà de 30 min. **À ajuster.**
 

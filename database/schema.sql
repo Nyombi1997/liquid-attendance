@@ -93,6 +93,22 @@ CREATE TABLE employees (
   CONSTRAINT fk_emp_status_by FOREIGN KEY (work_status_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Historique des disponibilités (statuts saisis par les RH, avec leur période) :
+-- affiché par le calendrier de présence pour les jours passés.
+CREATE TABLE work_statuses (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT UNSIGNED NOT NULL,
+  status      ENUM('bureau','teletravail','mission','conge') NOT NULL,
+  date_from   DATE NOT NULL,
+  date_to     DATE NULL COMMENT 'incluse, NULL = jusqu''à nouvel ordre',
+  note        VARCHAR(255) NULL,
+  created_by  INT UNSIGNED NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ws_emp_dates (employee_id, date_from, date_to),
+  CONSTRAINT fk_ws_emp FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ws_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- ---------------------------------------------------------------------------
 -- Module Attendance
 -- ---------------------------------------------------------------------------

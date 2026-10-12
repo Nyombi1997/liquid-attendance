@@ -58,7 +58,9 @@ $r->get('/corrections', [A\CorrectionController::class, 'index']);
 $r->post('/corrections/{id}', [A\CorrectionController::class, 'store']);
 $r->post('/corrections/{id}/annuler', [A\CorrectionController::class, 'cancel']);
 $r->get('/acces', [A\AccessController::class, 'index']);
+$r->get('/calendrier', [A\CalendarController::class, 'index'], 'calendar');
 $r->get('/api/direct', [A\LiveController::class, 'index'], 'board');
+$r->get('/api/notifications', [A\LiveController::class, 'notifications'], 'board');
 $r->get('/api/suggestions', [A\EmployeeController::class, 'suggest'], 'board');
 
 // Horaires et attributions

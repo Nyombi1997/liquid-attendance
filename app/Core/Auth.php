@@ -8,15 +8,18 @@ use App\Modules\Platform\Services\Departments;
 /**
  * Authentification et rôles.
  *   admin   : tout (seul rôle qui modifie fiches, départements, groupes, horaires, corrections…)
- *   rh      : tableau de bord, Agents (disponibilité uniquement), Employés en consultation
+ *   rh      : tableau de bord, Agents (disponibilité uniquement), Employés en consultation, Calendrier
  *   ceo     : consultation de tous les départements, aucune modification
- *   manager : page Agents, tableau de bord et présence du jour de son département uniquement
+ *   manager : Agents, tableau de bord, présence du jour, Employés et Calendrier de son département uniquement
  *   lecteur : consultation uniquement
+ * Les rubriques réservées au droit « view » (sorties manquantes, modules…) ne
+ * s'affichent ni pour les RH ni pour les managers.
  *
  * Droits (« abilities ») vérifiés par le routeur sur chaque route :
  *   board    : page Agents, tableau de bord, /api/*, profil
  *   presence : présence du jour
- *   staff    : liste et fiche des employés
+ *   staff    : liste et fiche des employés (managers : leur département)
+ *   calendar : calendrier de présence (temps au bureau, absences et leurs raisons)
  *   view     : autres pages de consultation (corrections, accès, horaires, groupes, pointeuses…)
  *   status   : disponibilité des agents (statut de travail)
  *   manage   : toutes les autres modifications
@@ -28,7 +31,8 @@ final class Auth
     private const ABILITIES = [
         'board'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
         'presence' => ['admin', 'ceo', 'manager', 'lecteur'],
-        'staff'    => ['admin', 'rh', 'ceo', 'lecteur'],
+        'staff'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
+        'calendar' => ['admin', 'rh', 'manager'],
         'view'     => ['admin', 'ceo', 'lecteur'],
         'status'   => ['admin', 'rh'],
         'manage'   => ['admin'],

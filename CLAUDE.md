@@ -83,7 +83,7 @@ bin/compute.php              calcul des journées (--days, --from/--to, --employ
 bin/create-admin.php         création / réinitialisation d'un compte admin
 worker/sync.py, run.sh       service de synchronisation (conteneur la-worker)
 database/schema.sql, seed.sql, migrations/NNN_*.sql
-tests/                       DayCalculatorTest.php ; test_sync.py + faux module zk (tests/fakezk)
+tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync.py + faux module zk (tests/fakezk)
 ```
 
 **Rôles et droits** (`Auth::ROLES`, droit = 3e argument de la route ; POST = `manage` par défaut) :
@@ -91,18 +91,20 @@ tests/                       DayCalculatorTest.php ; test_sync.py + faux module 
 | Droit | Rôles | Exemples de routes |
 |---|---|---|
 | `null` | public | `/connexion` |
-| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/suggestions`, `/profil` |
+| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/notifications`, `/api/suggestions`, `/profil` |
 | `presence` | admin, ceo, manager, lecteur | `/presence` |
-| `staff` | admin, rh, ceo, lecteur | `/employes`, `/employes/{id}` (consultation) |
+| `staff` | admin, rh, ceo, manager, lecteur | `/employes`, `/employes/{id}` (consultation ; manager : son département) |
+| `calendar` | admin, rh, manager | `/calendrier` |
 | `view` | admin, ceo, lecteur | `/groupes`, `/corrections`, `/acces`, `/horaires`, `/pointeuses`, `/presence/export`, `/flotte`, `/conges` |
 | `status` | admin, rh | POST `/agents/{id}/statut` (disponibilité) |
 | `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
 | `admin` | admin | `/utilisateurs`, `/journal`, POST `/pointeuses` |
 
-- `ceo` : tout voir, ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements, présence du jour seulement. `rh` : tableau de bord, Agents (disponibilité seulement), Employés en lecture.
+- `ceo` : tout voir (sauf le calendrier), ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements : Agents, tableau de bord, présence du jour, Calendrier, Employés en lecture. `rh` : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture. RH et managers : aucune rubrique `view` (sorties manquantes, modules…), et « sortie manquante » s'affiche « Présent »/« Retard » (`status_info()`).
 - Identifiants insensibles à la casse : `Auth::normalizeUsername()` (minuscules) à l'enregistrement et à la connexion.
 - `app.js` ajoute un bouton « œil » à tout champ mot de passe ; `data-suggest="go|submit|filter"` sur un champ de recherche affiche les propositions (`/api/suggestions`).
-- Périmètre : `Departments::sql(Auth::departmentScope())` dans toute requête accessible à un manager (pages, photos, `/api/direct`).
+- Périmètre : `Departments::sql(Auth::departmentScope())` dans toute requête accessible à un manager (pages, fiches employés, photos, calendrier, `/api/direct`, `/api/notifications`).
+- Cloche des notifications (`layout.php`, `setupNotifications()` dans `app.js`) : badges du jour via `/api/notifications` toutes les 15 s, compteur « 9+ », dernier badge lu en `localStorage`. Plus de notifications en bas à droite.
 - Accueil : `Auth::home()` → `/agents` (ceo, manager) ou `/`.
 
 **Tables** :
@@ -112,14 +114,15 @@ tests/                       DayCalculatorTest.php ; test_sync.py + faux module 
 | `users`, `login_attempts`, `audit_log` | comptes (rôle, département du manager), anti-force brute, journal |
 | `departments` | arborescence (parent_id), commune à tous les modules |
 | `employee_groups` | groupes d'agents (horaires) |
-| `employees` | liste commune : n° pointeuse, nom affiché, titre, contacts, groupe, département, photo, statut de travail (`work_status*`) |
+| `employees` | liste commune : n° pointeuse, nom affiché, titre, contacts, groupe, département, photo, statut de travail en cours (`work_status*`) |
+| `work_statuses` | historique des disponibilités saisies (télétravail, mission, congé, bureau) avec leur période : raisons d'absence du calendrier |
 | `offices`, `devices` | bureaux, pointeuses (entrée/sortie, présence/accès, état de synchro, horloge, `live_since`) |
 | `punches` | pointages bruts, copie fidèle, jamais modifiés |
 | `schedules`, `schedule_assignments` | horaires et attributions (agent > groupe > défaut, sur période) |
 | `attendance_days` | une ligne par agent et par jour (arrivée, départ, retard, heures sup, statut, correction de sortie) |
 | `settings` | réglages (`history_start_date`) |
 
-**Services (Attendance)** : `DayCalculator` (règles d'une journée), `ScheduleResolver`, `AttendanceComputer` (calcul et enregistrement), `DashboardStats` (indicateurs, partagés avec `/api/direct`), `AgentStatus` (pastilles de la page Agents).
+**Services (Attendance)** : `DayCalculator` (règles d'une journée), `ScheduleResolver`, `AttendanceComputer` (calcul et enregistrement), `DashboardStats` (indicateurs, partagés avec `/api/direct`), `AgentStatus` (pastilles de la page Agents), `AgentPhoto` (photos, page Agents et fiche employé), `WorkStatuses` (historique des disponibilités), `Calendar` (cases du calendrier : work / ongoing / open / reason / absent / pending / off).
 
 **Règles de calcul (DayCalculator)** : arrivée = premier badge « entrée » ; départ = dernier badge « sortie » après l'arrivée, ou heure corrigée ; retard compté depuis le début si arrivée > début + tolérance ; pause déduite ; heures sup après la fin si ≥ seuil ; jour non travaillé = « repos » (ou « hors horaire » si badge) ; pas de sortie = « en cours » le jour même puis « sortie manquante » (0 heure tant que non corrigée).
 
@@ -158,12 +161,12 @@ tests/                       DayCalculatorTest.php ; test_sync.py + faux module 
 - Développement sur le poste → commit → je fais moi-même git push.
 - Déploiement sur la VM : cd ~/liquid-attendance && git pull && (migration éventuelle) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
 - Le .env n'est pas dans git : il se modifie uniquement sur la VM.
-- Tests locaux : php tests/DayCalculatorTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
+- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
 - À la fin de chaque tâche, donne-moi les commandes exactes à lancer sur la VM, dans l'ordre.
 
 Commande de migration (sur la VM, depuis ~/liquid-attendance) :
 `sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/NNN_nom.sql`
-Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse). Toutes rejouables sans risque.
+Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`). Toutes rejouables sans risque.
 
 # 8. État et questions ouvertes
 
@@ -172,6 +175,7 @@ D'après docs/CADRAGE.md (état au 9 oct. 2026) :
 - À faire : déploiement sur la VM, réservation DHCP de la VM, NAT 8443/80 + certificat Let's Encrypt, sécurisation de Kibana.
 - Ajouté depuis : page Agents, départements, rôles CEO et Manager (migration `002_agents.sql`).
 - 12 oct. 2026 : RH limités (tableau de bord, Agents en disponibilité seule, Employés en lecture), propositions dans les recherches, bouton « œil » des mots de passe, identifiants insensibles à la casse (migration `003_identifiants.sql`).
+- 12 oct. 2026 (suite) : Calendrier (`/calendrier`, migration `004_calendrier.sql`), cloche des notifications, Employés ouverts aux managers (leur département), photo cliquable vers la fiche, photo modifiable dans « Modifier l'employé », menus RH/manager réduits (pas de sorties manquantes ni de modules).
 - Questions ouvertes : horaires réels et groupes à saisir ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

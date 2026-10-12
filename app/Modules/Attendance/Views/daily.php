@@ -1,8 +1,11 @@
 <?php
+$full = can('view'); // false : manager, journée du jour et son département uniquement
 $statuses = ['present' => 'Présent', 'retard' => 'Retard', 'absent' => 'Absent', 'sortie_manquante' => 'Sortie manquante',
     'en_cours' => 'En cours', 'hors_horaire' => 'Hors horaire', 'repos' => 'Repos'];
+if (!$full) {
+    unset($statuses['sortie_manquante']);
+}
 $multi = $filters['from'] !== $filters['to'];
-$full = can('view'); // false : manager, journée du jour et son département uniquement
 $query = array_filter(['from' => $filters['from'], 'to' => $filters['to'], 'group' => $filters['group'] ?: null, 'dep' => $filters['dep'] ?: null,
     'status' => $filters['status'] ?: null, 'q' => $filters['q'] ?: null]);
 $shift = fn(int $days) => url('/presence', array_merge($query, [
@@ -69,7 +72,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
     <?php foreach ($rows as $r): ?>
       <tr data-employee-id="<?= (int) $r['employee_id'] ?>">
         <?php if ($multi): ?><td class="nowrap"><?= e(date('d/m/Y', strtotime($r['work_date']))) ?></td><?php endif; ?>
-        <td><a class="person" href="<?= $full ? '/employes/' . (int) $r['employee_id'] . '?mois=' . e(substr($r['work_date'], 0, 7)) : '/agents' ?>">
+        <td><a class="person" href="/employes/<?= (int) $r['employee_id'] ?>?mois=<?= e(substr($r['work_date'], 0, 7)) ?>">
           <?= avatar($r['name'], photo_url(['id' => $r['employee_id'], 'photo_updated_at' => $r['photo_updated_at']])) ?>
           <span><strong><?= e($r['name']) ?></strong><small class="muted block"><?= e($r['group_name'] ?? 'Sans groupe') ?></small></span></a></td>
         <td class="muted"><?= e($r['schedule_name'] ?? '—') ?><?php if ($r['expected_start']): ?><small class="block"><?= e(time_label($r['expected_start'])) ?>–<?= e(time_label($r['expected_end'])) ?></small><?php endif; ?></td>
@@ -78,7 +81,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
         <td class="num" data-col="worked"><?= minutes_label((int) $r['worked_minutes']) ?></td>
         <td class="num <?= $r['late_minutes'] > 0 ? 'text-warn' : '' ?>" data-col="late"><?= e(late_label((int) $r['late_minutes'])) ?></td>
         <td class="num" data-col="overtime"><?= minutes_label((int) $r['overtime_minutes']) ?></td>
-        <td data-col="status"><?= status_badge($r['status']) ?></td>
+        <td data-col="status"><?= status_badge($r['status'], (int) $r['late_minutes']) ?></td>
       </tr>
     <?php endforeach; ?>
     <?php if (!$rows): ?><tr><td colspan="9" class="muted center">Aucune donnée pour ces critères.</td></tr><?php endif; ?>

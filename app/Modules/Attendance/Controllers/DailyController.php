@@ -66,7 +66,9 @@ final class DailyController extends Controller
             'to'     => null,
             'group'  => (int) $this->input('group', 0),
             'dep'    => (int) $this->input('dep', 0),
-            'status' => in_array($this->input('status'), self::STATUSES, true) ? $this->input('status') : '',
+            // RH et managers : pas de filtre « sortie manquante » (status_info())
+            'status' => in_array($this->input('status'), self::STATUSES, true)
+                && (Auth::can('view') || $this->input('status') !== 'sortie_manquante') ? $this->input('status') : '',
             'q'      => mb_substr((string) $this->input('q', ''), 0, 60),
         ];
         $f['to'] = $date($this->input('to'), $f['from']);

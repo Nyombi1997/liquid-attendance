@@ -73,6 +73,53 @@ final class LiveController extends Controller
         ], JSON_UNESCAPED_UNICODE);
     }
 
+    /**
+     * Cloche des notifications (toutes les pages) : GET /api/notifications?after=ID
+     *   after : dernier pointage déjà lu par l'utilisateur (mémorisé dans le navigateur)
+     * Renvoie les derniers badges du jour et le nombre de badges du jour non lus,
+     * dans le périmètre de l'utilisateur (managers : leur département).
+     */
+    public function notifications(): void
+    {
+        session_write_close();
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+
+        $scope = Departments::sql(Auth::departmentScope());
+        $after = max(0, (int) ($_GET['after'] ?? 0));
+        $since = date('Y-m-d') . ' 00:00:00';
+        $unread = (int) Database::value(
+            'SELECT COUNT(*) FROM (SELECT p.id FROM punches p LEFT JOIN employees e ON e.device_user_id = p.device_user_id
+              WHERE p.punched_at >= ? AND p.id > ?' . $scope . ' LIMIT 100) n',
+            [$since, $after]
+        );
+        $rows = Database::all(
+            "SELECT p.id, p.punched_at, d.name device, d.direction, d.usage_type,
+                    e.id employee_id, COALESCE(e.name, CONCAT('Agent ', p.device_user_id)) employee
+               FROM punches p JOIN devices d ON d.id = p.device_id
+               LEFT JOIN employees e ON e.device_user_id = p.device_user_id
+              WHERE p.punched_at >= ?" . $scope . '
+              ORDER BY p.punched_at DESC, p.id DESC LIMIT 15',
+            [$since]
+        );
+        echo json_encode([
+            'last_id' => (int) Database::value('SELECT COALESCE(MAX(id), 0) FROM punches'),
+            'unread'  => $unread,
+            'items'   => array_map(static fn(array $p) => [
+                'id'     => (int) $p['id'],
+                'kind'   => $p['usage_type'] === 'acces' ? 'acces' : $p['direction'],
+                'text'   => $p['employee'] . match (true) {
+                    $p['usage_type'] === 'acces' => ' a badgé',
+                    $p['direction'] === 'entree' => ' est entré',
+                    default                      => ' est sorti',
+                },
+                'device' => $p['device'],
+                'time'   => substr($p['punched_at'], 11, 5),
+                'url'    => $p['employee_id'] !== null ? '/employes/' . (int) $p['employee_id'] : null,
+            ], $rows),
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
     /** Nouveaux pointages (index primaire), du plus récent au plus ancien. */
     private function punches(int $since): array
     {
@@ -115,7 +162,7 @@ final class LiveController extends Controller
             [$since, $today]
         );
         $days = array_map(static function (array $d) use ($today): array {
-            [$statusLabel, $statusClass] = status_info($d['status']);
+            [$statusLabel, $statusClass] = status_info($d['status'], (int) $d['late_minutes']);
             $work = AgentStatus::work($d, $d['first_in'], $today);
             $arrival = AgentStatus::arrival($d, $work['key']);
             return [

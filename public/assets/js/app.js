@@ -541,6 +541,208 @@
     };
   }
 
+  // Recadrage de photo hors de la page Agents (formulaire de la fiche employé)
+  $$('[data-cropper-standalone]').forEach((root) => createCropper(root).reset(root.dataset.cropperPhoto || null));
+
+  // Cloche des notifications (toutes les pages) : badges du jour, dans le
+  // périmètre de l'utilisateur. Nombre de non lus en haut à droite (« 9+ » au-delà
+  // de 9) ; le dernier badge lu est mémorisé dans le navigateur.
+  const notif = document.querySelector('[data-notif]');
+  if (notif) setupNotifications(notif);
+
+  function setupNotifications(rootEl) {
+    const SEEN_KEY = 'liquid.notifications.seen';
+    const btn = rootEl.querySelector('[data-notif-toggle]');
+    const panel = rootEl.querySelector('[data-notif-panel]');
+    const list = rootEl.querySelector('[data-notif-list]');
+    const count = rootEl.querySelector('[data-notif-count]');
+    let seen = 0;
+    try { seen = parseInt(localStorage.getItem(SEEN_KEY), 10) || 0; } catch (e) { /* stockage indisponible */ }
+    let lastId = 0;
+    let shownSeen = seen; // surlignage des non lus pendant que la liste est ouverte
+    let timer = null;
+    let busy = false;
+
+    const save = (id) => {
+      seen = Math.max(seen, id);
+      try { localStorage.setItem(SEEN_KEY, String(seen)); } catch (e) { /* stockage indisponible */ }
+    };
+    const setCount = (n) => {
+      const label = n > 9 ? '9+' : String(n);
+      if (n > 0 && count.textContent !== label) replayBump(count);
+      count.hidden = n <= 0;
+      count.textContent = label;
+      btn.setAttribute('aria-label', n > 0 ? `Notifications : ${n > 9 ? 'plus de 9' : n} non lue(s)` : 'Notifications');
+    };
+    const replayBump = (node) => {
+      node.classList.remove('is-bumped');
+      void node.offsetWidth;
+      node.classList.add('is-bumped');
+    };
+    const render = (items) => {
+      if (!items.length) {
+        const li = document.createElement('li');
+        li.className = 'notif-empty muted';
+        li.textContent = 'Aucun badge aujourd\'hui.';
+        list.replaceChildren(li);
+        return;
+      }
+      const dirIcon = { entree: 'arrow-in', sortie: 'arrow-out', acces: 'door' };
+      const sprite = (document.querySelector('svg use')?.getAttribute('href') || '/assets/icons.svg').split('#')[0];
+      list.replaceChildren(...items.map((n) => {
+        const li = document.createElement('li');
+        const row = document.createElement(n.url ? 'a' : 'div');
+        row.className = `notif-item${n.id > shownSeen ? ' is-unread' : ''}`;
+        if (n.url) row.href = n.url;
+        const dir = document.createElement('span');
+        dir.className = `dir dir-${n.kind}`;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'icon');
+        svg.setAttribute('aria-hidden', 'true');
+        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        use.setAttribute('href', `${sprite}#${dirIcon[n.kind] || 'door'}`);
+        svg.appendChild(use);
+        dir.appendChild(svg);
+        const main = document.createElement('span');
+        main.className = 'list-main';
+        const strong = document.createElement('strong');
+        strong.textContent = n.text;
+        const small = document.createElement('small');
+        small.textContent = n.device;
+        main.append(strong, small);
+        const time = document.createElement('span');
+        time.className = 'time';
+        time.textContent = n.time;
+        row.append(dir, main, time);
+        li.appendChild(row);
+        return li;
+      }));
+    };
+
+    async function poll() {
+      if (busy) return;
+      busy = true;
+      try {
+        const res = await fetch(`/api/notifications?after=${seen}`, {
+          headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        lastId = data.last_id || lastId;
+        if (!panel.hidden) {
+          // Liste ouverte : les nouveaux badges sont lus aussitôt
+          save(lastId);
+          setCount(0);
+        } else {
+          shownSeen = seen;
+          setCount(data.unread || 0);
+        }
+        render(data.items || []);
+      } catch (e) {
+        /* réseau indisponible : nouvel essai au prochain passage */
+      } finally {
+        busy = false;
+        clearTimeout(timer);
+        timer = setTimeout(poll, document.hidden ? 60000 : 15000);
+      }
+    }
+
+    const open = (show) => {
+      panel.hidden = !show;
+      btn.setAttribute('aria-expanded', String(show));
+      if (show) {
+        shownSeen = seen;
+        save(lastId);
+        setCount(0);
+      } else {
+        // Les éléments surlignés sont désormais lus
+        $$('.is-unread', list).forEach((n) => n.classList.remove('is-unread'));
+        shownSeen = seen;
+      }
+    };
+    btn.addEventListener('click', () => open(panel.hidden));
+    rootEl.querySelector('[data-notif-read]').addEventListener('click', () => {
+      save(lastId);
+      shownSeen = seen;
+      setCount(0);
+      $$('.is-unread', list).forEach((n) => n.classList.remove('is-unread'));
+    });
+    document.addEventListener('click', (e) => { if (!panel.hidden && !rootEl.contains(e.target)) open(false); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) { open(false); btn.focus(); }
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+    poll();
+  }
+
+  // Calendrier : place les barres de la vue jour (minutes depuis minuit) et fait
+  // avancer le temps des journées « en cours » (calculé par le serveur au chargement).
+  const calendar = document.querySelector('[data-calendar]');
+  if (calendar) setupCalendar(calendar);
+
+  function setupCalendar(rootEl) {
+    const DAY = 1440;
+    const parse = (s) => new Date(String(s).replace(' ', 'T')).getTime();
+    let skew = parse(rootEl.dataset.serverTime) - Date.now(); // heure serveur - heure du navigateur
+    const minutesLabel = (m) => `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+    const nowMinute = () => {
+      const d = new Date(Date.now() + skew);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    const elapsed = (since) => Math.max(1, Math.floor((Date.now() + skew - parse(since)) / 60000));
+    const place = (node, from, to) => {
+      node.style.left = `${(from / DAY) * 100}%`;
+      node.style.width = `${(Math.max(0, to - from) / DAY) * 100}%`;
+    };
+
+    const draw = () => {
+      const isToday = rootEl.dataset.calDate && rootEl.dataset.calDate === rootEl.dataset.calToday;
+      const now = nowMinute();
+      $$('[data-from-min]', rootEl).forEach((n) => {
+        const from = Number(n.dataset.fromMin);
+        const to = n.dataset.since !== undefined && isToday ? Math.max(from, now) : Number(n.dataset.toMin);
+        place(n, from, to);
+      });
+      $$('[data-now-line]', rootEl).forEach((n) => { n.style.left = `${(now / DAY) * 100}%`; });
+      $$('[data-elapsed]', rootEl).forEach((n) => { n.textContent = minutesLabel(elapsed(n.dataset.elapsed)); });
+      $$('[data-total-since]', rootEl).forEach((td) => {
+        const total = Number(td.dataset.totalBase) + elapsed(td.dataset.totalSince);
+        td.querySelector('[data-total]').textContent = minutesLabel(total);
+      });
+    };
+    draw();
+    setInterval(draw, 30000);
+
+    // Mode direct (startLive) : un agent affiché a badgé ou sa journée a été
+    // recalculée → la grille est rechargée depuis le serveur (au plus toutes les 20 s).
+    let pending = false;
+    let last = 0;
+    const reload = async () => {
+      pending = false;
+      last = Date.now();
+      try {
+        const res = await fetch(window.location.href, { headers: { Accept: 'text/html' }, credentials: 'same-origin', cache: 'no-store' });
+        if (!res.ok) return;
+        const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+        const fresh = doc.querySelector('[data-calendar]');
+        if (!fresh) return;
+        rootEl.dataset.serverTime = fresh.dataset.serverTime;
+        skew = parse(fresh.dataset.serverTime) - Date.now();
+        const scroll = rootEl.querySelector('.cal-scroll')?.scrollLeft || 0;
+        rootEl.replaceChildren(...Array.from(fresh.childNodes).map((n) => document.importNode(n, true)));
+        const box = rootEl.querySelector('.cal-scroll');
+        if (box) box.scrollLeft = scroll;
+        draw();
+      } catch (e) { /* nouvel essai au prochain changement */ }
+    };
+    rootEl.liveDays = (days) => {
+      const shown = new Set($$('[data-employee-id]', rootEl).map((n) => Number(n.dataset.employeeId)));
+      if (!days.some((d) => shown.has(d.employee_id)) || pending) return;
+      pending = true;
+      setTimeout(reload, Math.max(0, 20000 - (Date.now() - last)));
+    };
+  }
+
   // Mode direct : pages qui portent data-live (tableau de bord, présence du
   // jour, agents, pointeuses). Appelle /api/direct toutes les 5 s (60 s si
   // l'onglet est caché) et met à jour la page sans la recharger.
@@ -560,7 +762,6 @@
       timer: null,
     };
     const ERROR_DELAYS = [10000, 30000, 60000];
-    const NOTIFY_KEY = 'liquid.notifications';
     const sprite = (document.querySelector('svg use')?.getAttribute('href') || '/assets/icons.svg').split('#')[0];
 
     // -- Outils ------------------------------------------------------------
@@ -603,7 +804,7 @@
     };
     const fresh = (node) => replay(node, 'is-fresh', 3100);
 
-    // -- Indicateur « En direct » et interrupteur des notifications ----------
+    // -- Indicateur « En direct » ----------------------------------------------
     const status = document.querySelector('[data-live-status]');
     const statusLabel = status?.querySelector('[data-live-label]');
     const statusAgo = status?.querySelector('[data-live-ago]');
@@ -621,37 +822,6 @@
       $$('[data-ago]').forEach((n) => { n.textContent = ago(n.dataset.ago); });
     };
     setInterval(tick, 1000);
-
-    const notifySwitch = document.querySelector('[data-live-notify]');
-    const notifyInput = notifySwitch?.querySelector('input');
-    let notifyOn = true;
-    try { notifyOn = localStorage.getItem(NOTIFY_KEY) !== 'off'; } catch (e) { /* stockage indisponible */ }
-    if (notifySwitch) {
-      notifySwitch.hidden = false;
-      notifyInput.checked = notifyOn;
-      notifyInput.addEventListener('change', () => {
-        notifyOn = notifyInput.checked;
-        try { localStorage.setItem(NOTIFY_KEY, notifyOn ? 'on' : 'off'); } catch (e) { /* stockage indisponible */ }
-      });
-    }
-
-    // -- Notifications (3 au maximum, 5 s chacune) ---------------------------
-    let toasts = null;
-    const toast = (p) => {
-      if (!toasts) {
-        toasts = el('div', 'toasts');
-        toasts.setAttribute('role', 'status');
-        toasts.setAttribute('aria-live', 'polite');
-        document.body.appendChild(toasts);
-      }
-      const access = p.usage_type === 'acces';
-      const verb = access ? '' : (p.direction === 'entree' ? ' est entré' : ' est sorti');
-      const t = el('div', `toast toast-${access ? 'acces' : p.direction}`);
-      t.append(el('strong', '', p.employee.name + verb), document.createTextNode(` · ${p.device.name}`));
-      toasts.prepend(t);
-      while (toasts.children.length > 3) toasts.lastElementChild.remove();
-      setTimeout(() => t.remove(), 5000);
-    };
 
     // -- Tableau de bord ----------------------------------------------------
     const updateKpis = (k) => {
@@ -710,7 +880,7 @@
         const li = el('li');
         li.dataset.late = `${l.id}:${l.late_minutes}:${l.first_in}`;
         const a = el('a', 'list-item');
-        a.href = latesList.dataset.lateHref === 'agents' ? '/agents' : `/employes/${l.id}`;
+        a.href = `/employes/${l.id}`;
         const main = el('span', 'list-main');
         main.append(el('strong', '', l.name), el('small', '', `${l.group_name} · arrivé à ${l.first_in}`));
         a.append(el('span', 'avatar avatar-sm', initials(l.name)), main, el('span', 'badge badge-warn', `+${l.late_minutes} min`));
@@ -853,11 +1023,6 @@
         return;
       }
       const punches = data.punches || [];
-      if (notifyOn) {
-        // Seulement les badges récents (pas l'historique repris après une coupure)
-        punches.filter((p) => serverNow() - parse(p.punched_at) < 10 * 60 * 1000)
-          .slice(0, 3).reverse().forEach(toast);
-      }
       state.punch = Math.max(state.punch, data.last_punch_id || 0);
       if (data.last_day_computed_at) state.day = data.last_day_computed_at;
 
@@ -872,6 +1037,8 @@
         updateCards(data.days || []);
       } else if (page === 'devices') {
         updateDeviceRows(data.devices || []);
+      } else if (page === 'calendar') {
+        document.querySelector('[data-calendar]')?.liveDays?.(data.days || []);
       }
     };
 

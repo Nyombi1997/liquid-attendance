@@ -9,7 +9,7 @@ final class Router
     private array $routes = [];
 
     /**
-     * @param string      $ability null = page publique, sinon un droit de Auth (board, presence, staff, view, status, manage, admin)
+     * @param string      $ability null = page publique, sinon un droit de Auth (board, presence, staff, calendar, view, status, manage, admin)
      */
     public function add(string $method, string $path, array $handler, ?string $ability = 'view'): void
     {

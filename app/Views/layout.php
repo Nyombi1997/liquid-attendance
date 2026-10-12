@@ -16,14 +16,17 @@ $active = static function (string ...$prefixes) use ($path): string {
 };
 // Menu selon le rôle : chaque entrée n'apparaît qu'avec le droit de sa route.
 // La direction et les managers commencent par la page Agents.
+// RH et managers : Agents, Tableau de bord, (Présence du jour), Calendrier, Employés ;
+// rien de ce qui demande le droit « view » (sorties manquantes, modules…).
 $agents = ['/agents', 'id-card', 'Agents', ['/agents'], 'board'];
 $presence = [
     ['/', 'dashboard', 'Tableau de bord', ['/'], 'board'],
     ['/presence', 'calendar', 'Présence du jour', ['/presence'], 'presence'],
+    ['/calendrier', 'timeline', 'Calendrier', ['/calendrier'], 'calendar'],
 ];
 $nav = [
     // Manager : son département uniquement
-    (can('view') || can('staff') ? 'Présence' : 'Mon département') => array_merge(
+    (Auth::role() === 'manager' ? 'Mon département' : 'Présence') => array_merge(
         Auth::home() === '/agents' ? [$agents] : [],
         $presence,
         Auth::home() === '/agents' ? [] : [$agents],
@@ -90,19 +93,29 @@ $nav = array_filter($nav);
   <div class="main">
     <header class="topbar">
       <button class="menu-toggle" type="button" data-toggle-sidebar aria-label="Menu"><?= icon('menu') ?></button>
-      <form class="search" action="<?= can('staff') ? '/employes' : '/agents' ?>" method="get" role="search">
+      <form class="search" action="/employes" method="get" role="search">
         <?= icon('search') ?>
-        <input type="search" name="q" placeholder="Rechercher un <?= can('staff') ? 'employé' : 'agent' ?>…" aria-label="Rechercher" autocomplete="off" data-suggest="go">
+        <input type="search" name="q" placeholder="Rechercher un employé…" aria-label="Rechercher" autocomplete="off" data-suggest="go">
       </form>
       <div class="topbar-right">
         <span class="live-status" data-live-status hidden role="status" aria-live="polite">
           <span class="live-dot"></span><strong data-live-label>En direct</strong><small data-live-ago></small>
         </span>
-        <label class="switch" data-live-notify hidden>
-          <input type="checkbox" data-live-notify-input>
-          <span class="switch-track" aria-hidden="true"></span><span class="switch-label">Notifications</span>
-        </label>
         <span class="today"><?= e(ucfirst(date_fr(date('Y-m-d')))) ?></span>
+        <div class="notif" data-notif>
+          <button type="button" class="notif-btn" data-notif-toggle aria-expanded="false" aria-controls="notif-panel" aria-label="Notifications" title="Notifications">
+            <?= fa('fa-regular fa-bell') ?><span class="notif-count" data-notif-count hidden></span>
+          </button>
+          <div class="notif-panel" id="notif-panel" data-notif-panel hidden>
+            <div class="notif-head">
+              <strong>Notifications</strong>
+              <button type="button" class="btn btn-ghost btn-sm" data-notif-read><?= fa('fa-solid fa-check-double') ?> Tout marquer comme lu</button>
+            </div>
+            <ul class="notif-list" data-notif-list>
+              <li class="notif-empty muted">Aucun badge aujourd'hui.</li>
+            </ul>
+          </div>
+        </div>
         <a class="user-chip" href="/profil">
           <span class="avatar"><?= e(initials($user['full_name'] ?? '?')) ?></span>
           <span class="user-meta"><strong><?= e($user['full_name'] ?? '') ?></strong><small><?= e(Auth::ROLES[$user['role'] ?? ''] ?? '') ?><?php if (($user['role'] ?? '') === 'manager' && $user['department_id']): ?> · <?= e(App\Modules\Platform\Services\Departments::all()[(int) $user['department_id']]['name'] ?? '') ?><?php endif; ?></small></span>

@@ -29,8 +29,10 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
 - **Page Agents** (`/agents`) : une carte par agent avec photo, titre, e-mail et téléphone (copiables d'un clic), département, groupe, **heure d'arrivée du jour** (vert : à l'heure, orange : en retard, rouge : pas arrivé) et **statut de travail** en haut à droite (au bureau, télétravail, mission, congé). Filtres par département (arbre à gauche), par état (à l'heure, en retard, pas arrivés…) et recherche instantanée. Mise à jour en direct.
-- **Fiche agent depuis la carte** (Administrateur) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG).
-- **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH et l'administrateur peuvent saisir la disponibilité (télétravail, mission, congé ou bureau) jusqu'à une date, puis revenir à l'automatique ; c'est la seule modification ouverte aux RH. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin.
+- **Fiche agent depuis la carte** (Administrateur) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG). Un clic sur la **photo** d'une carte ouvre la page de détails de l'agent (`/employes/{id}`) ; le formulaire « Modifier l'employé » propose aussi de changer ou retirer la photo.
+- **Calendrier** (`/calendrier`, Administrateur, RH et managers pour leur département) : une ligne par agent. Vue **Jour** façon planning (heures de 0 h à 24 h, barre de l'arrivée au départ sur fond de l'horaire prévu, trait de l'heure actuelle) ; vues **Semaine** et **Mois** (une case par jour, total de la période). Le temps passé au bureau avance **en direct** pour les agents présents ; les raisons d'absence saisies (télétravail, mission, congé, avec date de fin et note) s'affichent sur leurs jours, y compris passés (historique `work_statuses`) ; un agent **absent sans raison est en rouge**. Retard signalé en orange, départ non badgé en barre estompée.
+- **Notifications** : cloche en haut à droite sur toutes les pages, avec le nombre de badges du jour non lus (« 9+ » au-delà de 9). Un clic ouvre la liste des derniers badges (lien vers la fiche de l'agent) et les marque comme lus ; « Tout marquer comme lu » remet le compteur à zéro. Badges limités au périmètre de l'utilisateur (`/api/notifications`, toutes les 15 s) ; dernier badge lu mémorisé dans le navigateur.
+- **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH et l'administrateur peuvent saisir la disponibilité (télétravail, mission, congé ou bureau) jusqu'à une date, puis revenir à l'automatique ; c'est la seule modification ouverte aux RH. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin. Chaque saisie est conservée avec sa période (table `work_statuses`) pour le calendrier.
 - **Départements** (`/departements`) : arborescence (un département peut avoir des sous-départements), affectation des agents depuis la carte, la fiche employé ou en lot depuis la liste des employés.
 - **Recherche avec propositions** : dans toutes les barres de recherche, les agents correspondants s'affichent dès la première lettre (nom, titre, matricule ou n° de pointeuse) ; un clic (ou flèches + Entrée) ouvre la fiche ou applique le filtre. Propositions limitées au périmètre de l'utilisateur (`/api/suggestions`).
 - **Mots de passe** : bouton « œil » sur chaque champ pour afficher ou masquer la saisie.
@@ -42,12 +44,14 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 | Rôle | Accès | Page d'accueil |
 |---|---|---|
 | Administrateur | Tout, et **seul rôle qui modifie** : fiches et photos des agents, employés, départements, groupes, horaires, corrections, comptes, pointeuses | Tableau de bord |
-| Ressources humaines | Tableau de bord, Agents (**mise à jour de la disponibilité uniquement**), Employés (consultation) ; tous les départements | Tableau de bord |
-| Direction (CEO) | Toutes les pages de consultation, tous les départements, **aucune modification** | Agents |
-| Manager de département | Page Agents, tableau de bord et présence **du jour** de son département et de ses sous-départements uniquement | Agents |
+| Ressources humaines | Tableau de bord, Agents (**mise à jour de la disponibilité uniquement**), Calendrier, Employés (consultation) ; tous les départements. Ni sorties manquantes ni modules | Tableau de bord |
+| Direction (CEO) | Toutes les pages de consultation (sauf le calendrier), tous les départements, **aucune modification** | Agents |
+| Manager de département | Agents, tableau de bord, présence **du jour**, Calendrier et Employés (consultation), pour son département et ses sous-départements uniquement. Ni sorties manquantes ni modules | Agents |
 | Lecteur | Consultation et export, sans modification | Tableau de bord |
 
-Le département d'un manager se choisit dans **Administration > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, photos et `/api/direct`).
+Le département d'un manager se choisit dans **Administration > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, fiches, photos, calendrier, `/api/direct` et `/api/notifications`).
+
+Pour les RH et les managers, la notion de « sortie manquante » n'apparaît nulle part : une journée sans sortie badgée s'affiche « Présent » (ou « Retard ») et la carte « Sorties manquantes » du tableau de bord est masquée.
 
 ### Règles de calcul
 
@@ -73,11 +77,12 @@ Objectif : un badge visible dans la plateforme en moins de 10 secondes, sans rec
 | 2. Badge de présence : l'agent est mis en file, puis sa journée (veille et jour même, pour les horaires de nuit) est recalculée. Un seul appel `php bin/compute.php --employee-device-id=…` au plus toutes les 5 s pour tous les agents en attente | thread « recalcul » du worker | 0 à 5 s |
 | 3. Les pages ouvertes interrogent `GET /api/direct` toutes les 5 s (60 s si l'onglet est caché) | `public/assets/js/app.js` | 0 à 5 s |
 
-Sur les pages **Tableau de bord**, **Présence** (journée d'aujourd'hui) et **Pointeuses** :
+Sur les pages **Tableau de bord**, **Présence** (journée d'aujourd'hui), **Agents**, **Calendrier** (période qui contient aujourd'hui) et **Pointeuses** :
 
 - indicateurs mis à jour avec une courte animation, nouveaux pointages ajoutés en haut des « Derniers pointages » avec un surlignage, retards du jour et pastilles des pointeuses à jour ;
 - sur la page Présence, les lignes concernées (arrivée, départ, présence, retard, heures sup, statut) sont mises à jour ; si un nouvel agent devient concerné par les filtres, une barre « Nouveaux pointages : actualiser » s'affiche ;
-- une notification discrète en bas à droite pour chaque badge (« … est entré · Entrée 5e étage »), désactivable avec l'interrupteur « Notifications » de l'en-tête (choix mémorisé dans le navigateur) ;
+- sur le calendrier, la grille est relue depuis le serveur (au plus toutes les 20 s) quand un agent affiché a badgé, et le temps des journées en cours avance chaque 30 s ;
+- les badges arrivent aussi dans la cloche des notifications (en haut à droite, toutes les pages) ;
 - l'indicateur « En direct · à jour il y a X s » de la barre du haut passe en gris « Hors ligne » si les appels échouent (nouvel essai après 10 s, 30 s puis 60 s). Si la session a expiré, retour à la page de connexion.
 
 `/api/direct` (droit « consultation ») renvoie du JSON, jamais mis en cache : nouveaux pointages depuis `since_punch` (30 au plus), journées du jour modifiées depuis `since_day`, indicateurs (les mêmes que le tableau de bord, service `DashboardStats`), retards du jour et état des pointeuses. Il libère le verrou de session dès l'utilisateur vérifié, pour ne pas bloquer les autres onglets, et répond en quelques millisecondes (index sur `punches.id` et `attendance_days.computed_at`). `computed_at` ne change que si le résultat d'une journée change : le calcul global des 5 minutes ne renvoie donc pas toutes les lignes aux pages ouvertes.
@@ -174,6 +179,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/002_agents.sql
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/003_identifiants.sql
+sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/004_calendrier.sql
 ```
 
 Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
@@ -183,6 +189,7 @@ Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`,
 | `001_live.sql` | Mode direct : `devices.last_event_at` (dernier badge reçu), `devices.live_since` (écoute en direct active), index sur `attendance_days.computed_at` |
 | `002_agents.sql` | Page Agents : table `departments`, rôles `ceo` et `manager` + `users.department_id`, colonnes `employees.job_title`, `department_id`, `photo_updated_at`, `work_status*` |
 | `003_identifiants.sql` | Identifiants insensibles à la casse : comptes existants passés en minuscules, collation `utf8mb4_unicode_ci` sur `users.username` |
+| `004_calendrier.sql` | Calendrier : table `work_statuses` (historique des disponibilités avec leur période), reprise des statuts en cours |
 
 Les photos des agents sont enregistrées dans `./data/storage/photos` (volume monté dans le conteneur `app`, hors du dossier public) : elles sont conservées lors des mises à jour et incluses dans la sauvegarde de `./data`.
 
@@ -206,8 +213,9 @@ app/
   Modules/
     Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments), modules à venir
     Attendance/            module Présence
-      Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), LiveController (/api/direct)
-      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs), AgentStatus (pastilles des cartes)
+      Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), CalendarController, LiveController (/api/direct, /api/notifications)
+      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs), AgentStatus (pastilles des cartes),
+                           AgentPhoto (photos), WorkStatuses (historique des disponibilités), Calendar (cases du calendrier)
       Views/
   Views/                   gabarit commun, pages d'erreur
 bin/                       compute.php (calcul), create-admin.php
@@ -217,7 +225,7 @@ docker/                    images app (Apache + HTTPS) et worker
 public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes), assets/vendor/fontawesome (Font Awesome Free 6.7.2, servi localement)
 storage/                   fichiers déposés (photos) ; en production : volume ./data/storage
 worker/                    sync.py (connexion permanente aux pointeuses, calculs), run.sh (lancement)
-tests/                     règles de calcul (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
+tests/                     règles de calcul et cases du calendrier (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
 
 Chaque futur module (Fleet, Leave) aura son dossier dans `app/Modules/` et réutilisera la table `employees`, les comptes et le gabarit.

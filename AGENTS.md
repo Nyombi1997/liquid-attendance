@@ -23,17 +23,19 @@ storage/                     fichiers déposés (photos) ; en production volume 
 ### Rôles, droits et périmètre
 - Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`. Libellés dans `Auth::ROLES`.
 - Droits vérifiés par le routeur (3e argument de `$r->get/post`) :
-  - `board` : page Agents, tableau de bord, `/api/direct`, `/api/suggestions`, profil — **tous les rôles** ;
+  - `board` : page Agents, tableau de bord, `/api/direct`, `/api/notifications`, `/api/suggestions`, profil — **tous les rôles** ;
   - `presence` : présence du jour — tous sauf `rh` ;
-  - `staff` : liste et fiche des employés (consultation) — tous sauf `manager` ;
+  - `staff` : liste et fiche des employés (consultation) — **tous les rôles** (manager : son département) ;
+  - `calendar` : calendrier de présence — `admin`, `rh`, `manager` ;
   - `view` : autres pages de consultation (défaut des routes GET) — `admin`, `ceo`, `lecteur` ;
   - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
   - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
   - `admin` : comptes, pointeuses, journal.
-- **CEO** : tout voir, ne rien modifier. **Manager** : uniquement son département et ses sous-départements. **RH** : tableau de bord, Agents (disponibilité seulement), Employés en lecture.
+- **CEO** : tout voir (sauf le calendrier), ne rien modifier. **Manager** : uniquement son département et ses sous-départements (Agents, tableau de bord, présence du jour, Calendrier, Employés). **RH** : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture.
+- RH et managers ne voient **rien** de ce qui demande `view` (sorties manquantes, accès, horaires, modules…) : pas de lien, pas de carte. « Sortie manquante » leur est affiché « Présent » / « Retard » : passer les minutes de retard à `status_badge($status, $late)` / `status_info()`.
 - **Toute requête qui lit des agents, des journées ou des pointages et qui est accessible à un manager doit appliquer le périmètre** :
   `Departments::sql(Auth::departmentScope())` (renvoie `''`, `' AND 0'` ou `' AND e.department_id IN (…)'`). Ne jamais l'oublier dans une nouvelle page `board` ni dans `/api/direct`.
-- Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('presence')`, `can('staff')`, `can('view')`, `can('status')`, `can('manage')`, `can('admin')`. Un manager ou un RH ne doit voir aucun lien vers une page qui lui renverrait 403.
+- Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('presence')`, `can('staff')`, `can('calendar')`, `can('view')`, `can('status')`, `can('manage')`, `can('admin')`. Un manager ou un RH ne doit voir aucun lien vers une page qui lui renverrait 403.
 - Le menu de `layout.php` liste chaque entrée avec son droit (5e élément) : ajouter une page = ajouter l'entrée avec le même droit que sa route.
 - Identifiants : toujours passer par `Auth::normalizeUsername()` (minuscules) avant d'enregistrer ou de comparer.
 - Accueil après connexion : `Auth::home()` (`/agents` pour `ceo` et `manager`, `/` sinon). Le menu de `app/Views/layout.php` dépend du rôle.
@@ -71,11 +73,19 @@ storage/                     fichiers déposés (photos) ; en production volume 
   - arrivée (en bas à droite) : `ontime` / `late` / `expected` / `missing` / `off`, d'après `attendance_days` ;
   - puces de filtre : `AgentStatus::FILTERS` et `AgentStatus::filters()`.
 - `/api/direct` renvoie l'état déjà calculé de chaque carte (`days[].card`) : **pas de règle métier en JavaScript**, `app.js` ne fait qu'afficher.
-- Photo : recadrée dans le navigateur (`createCropper` dans `app.js`, JPEG 512×512), envoyée dans `photo_data`, contrôlée par `AgentController::decodePhoto()` (pas d'extension GD dans le conteneur). URL versionnée : `photo_url($emp)` ; pastille ronde : `avatar($nom, photo_url($emp))`.
+- Un clic sur la photo d'une carte ouvre `/employes/{id}` ; le bouton appareil photo (admin) reste un bouton à part, au-dessus du lien.
+- Photo : recadrée dans le navigateur (`createCropper` dans `app.js`, JPEG 512×512), gabarit partagé `Views/_photo_cropper.php` (page Agents et « Modifier l'employé », où `$cropperPhoto` l'initialise seul), envoyée dans `photo_data`, contrôlée et enregistrée par `Services/AgentPhoto.php` (pas d'extension GD dans le conteneur). URL versionnée : `photo_url($emp)` ; pastille ronde : `avatar($nom, photo_url($emp))`.
+- Disponibilité saisie (`AgentController::status`) : mettre à jour `employees.work_status*` **et** l'historique `WorkStatuses::record()` (lu par le calendrier).
+
+### Calendrier (`/calendrier`)
+- `CalendarController` + vue `calendar.php` ; l'état de chaque case vient de `Services/Calendar.php` (testé par `php tests/CalendarTest.php`), les raisons d'absence de `WorkStatuses::reasons()`.
+- Vue jour : barres placées par `app.js` (`setupCalendar`) d'après `data-from-min` / `data-to-min` (minutes depuis minuit) ; `data-since` / `data-elapsed` : temps des journées en cours qui avance. La CSP interdit `style=` : jamais de position écrite dans le HTML.
+- En direct : la page porte `data-live="calendar"` ; quand `/api/direct` signale un agent affiché, la grille est relue depuis le serveur (pas de règle en JS).
 
 ### Mode direct
 - Une page en direct porte `data-live="<page>"` et les attributs `data-live-since-*` (voir `dashboard.php`, `agents.php`). Le traitement est dans `startLive()` de `app.js` (`apply()` → fonction de mise à jour de la page).
 - Toute nouvelle donnée ajoutée à `/api/direct` doit rester légère (appel toutes les 5 s) et respecter le périmètre du manager.
+- Notifications : uniquement la cloche de `layout.php` (`setupNotifications()`, `/api/notifications`) ; ne pas réintroduire de notifications flottantes.
 
 ## Vérifier avant de rendre la main
 
@@ -83,6 +93,7 @@ storage/                     fichiers déposés (photos) ; en production volume 
 for f in $(git ls-files '*.php') ; do php -l "$f" | grep -v '^No syntax'; done   # syntaxe PHP
 node --check public/assets/js/app.js                                           # syntaxe JS
 php tests/DayCalculatorTest.php                                               # règles de calcul
+php tests/CalendarTest.php                                                    # cases du calendrier
 python3 tests/test_sync.py                                                    # worker (faux module zk)
 ```
 

@@ -1,14 +1,22 @@
 <?php
 $rate = $kpis['rate'];
+$full = can('view'); // false : manager (son département, pages du jour) ou RH
+$daily = can('presence'); // présence du jour : pas pour les RH
+$series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
+if (!$full) {
+    // RH et managers : pas de sorties manquantes, ces journées comptent parmi les présents
+    unset($series['incomplet']);
+    foreach ($trend as &$t) {
+        $t['present'] += $t['incomplet'];
+        unset($t['incomplet']);
+    }
+    unset($t);
+}
 // Graphique : barres empilées sur 14 jours (SVG généré côté serveur)
 $max = max(1, ...array_map(fn($d) => array_sum($d), array_values($trend)));
 $w = 640; $h = 200; $pad = 28; $n = count($trend);
 $slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
-$series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
 $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
-$full = can('view'); // false : manager (son département, pages du jour) ou RH
-$daily = can('presence'); // présence du jour : pas pour les RH
-$staff = can('staff'); // fiche employé : pas pour les managers
 ?>
 <div class="page-head" data-live="dashboard" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($today) ?>">
   <div>
@@ -38,11 +46,13 @@ $staff = can('staff'); // fiche employé : pas pour les managers
     <strong class="kpi-value" data-kpi="absent"><?= $kpis['absent'] ?></strong>
     <span class="kpi-foot">aucun pointage d'entrée</span>
   </<?= $daily ? 'a' : 'div' ?>>
-  <<?= $full ? 'a href="/corrections"' : 'div' ?> class="kpi kpi-accent">
+  <?php if ($full): ?>
+  <a href="/corrections" class="kpi kpi-accent">
     <span class="kpi-label">Sorties manquantes</span>
     <strong class="kpi-value" data-kpi="pending"><?= $kpis['pending'] ?></strong>
     <span class="kpi-foot">à corriger (30 derniers jours)</span>
-  </<?= $full ? 'a' : 'div' ?>>
+  </a>
+  <?php endif; ?>
 </div>
 
 <div class="grid-main">
@@ -57,7 +67,7 @@ $staff = can('staff'); // fiche employé : pas pour les managers
         <text class="axis" x="<?= $pad - 6 ?>" y="<?= $y + 4 ?>" text-anchor="end"><?= (int) round($g * $max) ?></text>
       <?php endforeach; ?>
       <?php $i = 0; foreach ($trend as $date => $d): $x = $pad + $i * $slot + ($slot - $bar) / 2; $y = $h; ?>
-        <g><title><?= e(date_fr($date)) ?> : <?= $d['present'] ?> présents, <?= $d['retard'] ?> retards, <?= $d['incomplet'] ?> incomplets, <?= $d['absent'] ?> absents</title>
+        <g><title><?= e(date_fr($date)) ?> : <?= $d['present'] ?> présents, <?= $d['retard'] ?> retards, <?= isset($d['incomplet']) ? $d['incomplet'] . ' incomplets, ' : '' ?><?= $d['absent'] ?> absents</title>
         <?php foreach (array_keys($series) as $k): $bh = $d[$k] / $max * ($h - 10); if ($bh <= 0) continue; $y -= $bh; ?>
           <rect class="s-<?= $k ?>" x="<?= round($x, 1) ?>" y="<?= round($y, 1) ?>" width="<?= round($bar, 1) ?>" height="<?= round(max($bh - 1, 0.5), 1) ?>" rx="2"/>
         <?php endforeach; ?>
@@ -73,9 +83,9 @@ $staff = can('staff'); // fiche employé : pas pour les managers
   <section class="card">
     <div class="card-head"><h2>Retards du jour</h2><?php if ($daily): ?><a class="link" href="/presence?status=retard">Tous</a><?php endif; ?></div>
     <p class="muted empty-line" data-lates-empty<?= $lates ? ' hidden' : '' ?>>Aucun retard pour l'instant.</p>
-    <ul class="list" data-lates data-late-href="<?= $staff ? 'employes' : 'agents' ?>">
+    <ul class="list" data-lates>
       <?php foreach ($lates as $l): ?>
-        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="<?= $staff ? '/employes/' . (int) $l['id'] : '/agents' ?>" class="list-item">
+        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="/employes/<?= (int) $l['id'] ?>" class="list-item">
           <span class="avatar avatar-sm"><?= e(initials($l['name'])) ?></span>
           <span class="list-main"><strong><?= e($l['name']) ?></strong><small><?= e($l['group_name'] ?? 'Sans groupe') ?> · arrivé à <?= e(time_label($l['first_in'])) ?></small></span>
           <span class="badge badge-warn">+<?= (int) $l['late_minutes'] ?> min</span>

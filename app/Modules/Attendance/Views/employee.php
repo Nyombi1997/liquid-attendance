@@ -16,6 +16,9 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
     </div>
   </div>
   <div class="head-actions">
+    <?php if (can('calendar')): ?>
+      <a class="btn btn-outline" href="/calendrier?vue=mois&amp;date=<?= e($month) ?>-01&amp;q=<?= e(rawurlencode($emp['name'])) ?>"><?= icon('timeline') ?> Calendrier</a>
+    <?php endif; ?>
     <?php if (can('manage')): ?>
       <a class="btn btn-outline" href="/horaires/attribuer?employe=<?= (int) $emp['id'] ?>"><?= icon('clock') ?> Attribuer un horaire</a>
       <a class="btn btn-primary" href="/employes/<?= (int) $emp['id'] ?>/modifier"><?= icon('edit') ?> Modifier</a>
@@ -35,7 +38,7 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
   <div class="kpi"><span class="kpi-label">Retards</span><strong class="kpi-value"><?= $stats['late_days'] ?></strong><span class="kpi-foot"><?= minutes_label($stats['late']) ?> au total</span></div>
   <div class="kpi"><span class="kpi-label">Heures sup</span><strong class="kpi-value"><?= minutes_label($stats['overtime']) ?></strong></div>
   <div class="kpi"><span class="kpi-label">Absences</span><strong class="kpi-value"><?= $stats['absent'] ?></strong></div>
-  <div class="kpi kpi-accent"><span class="kpi-label">Sorties manquantes</span><strong class="kpi-value"><?= $stats['missing'] ?></strong></div>
+  <?php if (can('view')): ?><div class="kpi kpi-accent"><span class="kpi-label">Sorties manquantes</span><strong class="kpi-value"><?= $stats['missing'] ?></strong></div><?php endif; ?>
 </div>
 
 <div class="grid-main">
@@ -52,7 +55,7 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
           <td class="num"><?= minutes_label((int) $d['worked_minutes']) ?></td>
           <td class="num <?= $d['late_minutes'] > 0 ? 'text-warn' : '' ?>"><?= $d['late_minutes'] > 0 ? (int) $d['late_minutes'] . ' min' : '—' ?></td>
           <td class="num"><?= minutes_label((int) $d['overtime_minutes']) ?></td>
-          <td><?= status_badge($d['status']) ?></td>
+          <td><?= status_badge($d['status'], (int) $d['late_minutes']) ?></td>
         </tr>
       <?php endforeach; ?>
       <?php if (!$days): ?><tr><td colspan="7" class="muted center">Aucune journée calculée pour ce mois.</td></tr><?php endif; ?>

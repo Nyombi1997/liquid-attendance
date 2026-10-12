@@ -81,9 +81,16 @@ function day_short(string $date): string
     return $jours[(int) date('N', $ts)] . ' ' . date('d/m', $ts);
 }
 
-/** Libellé et classe CSS (badge-…) d'un statut de journée. */
-function status_info(string $status): array
+/**
+ * Libellé et classe CSS (badge-…) d'un statut de journée.
+ * RH et managers (sans le droit « view ») ne voient pas les sorties manquantes :
+ * la journée s'affiche « Présent » ou « Retard » ($late = minutes de retard).
+ */
+function status_info(string $status, int $late = 0): array
 {
+    if ($status === 'sortie_manquante' && !can('view')) {
+        $status = $late > 0 ? 'retard' : 'present';
+    }
     $map = [
         'present'          => ['Présent', 'ok'],
         'retard'           => ['Retard', 'warn'],
@@ -96,9 +103,9 @@ function status_info(string $status): array
     return $map[$status] ?? [$status, 'muted'];
 }
 
-function status_badge(string $status): string
+function status_badge(string $status, int $late = 0): string
 {
-    [$label, $class] = status_info($status);
+    [$label, $class] = status_info($status, $late);
     return '<span class="badge badge-' . $class . '">' . e($label) . '</span>';
 }
 
