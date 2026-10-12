@@ -42,7 +42,7 @@ $cellIcon = static function (array $c): string {
   <input type="hidden" name="vue" value="<?= e($view) ?>">
   <div class="cal-nav">
     <a class="btn btn-ghost" href="<?= e($link(['date' => $prev])) ?>" aria-label="Période précédente"><?= icon('chevron-left') ?></a>
-    <a class="btn btn-outline btn-sm" href="<?= e($link(['date' => $today])) ?>">Aujourd'hui</a>
+    <a class="btn btn-outline btn-sm" href="<?= e($link(['vue' => 'jour', 'date' => $today])) ?>" title="Afficher la journée d'aujourd'hui">Aujourd'hui</a>
     <a class="btn btn-ghost" href="<?= e($link(['date' => $next])) ?>" aria-label="Période suivante"><?= icon('chevron-right') ?></a>
   </div>
   <label class="field"><span>Date</span><input type="date" name="date" value="<?= e($date) ?>"></label>
@@ -102,7 +102,7 @@ $cellIcon = static function (array $c): string {
         <th class="cal-agent-head" scope="col">Agents</th>
         <?php foreach ($dates as $d): $n = (int) date('N', strtotime($d)); ?>
           <th scope="col" class="<?= $n >= 6 ? 'is-weekend' : '' ?><?= $d === $today ? ' is-today' : '' ?>">
-            <a href="<?= e($link(['vue' => 'jour', 'date' => $d])) ?>" title="<?= e(ucfirst(date_fr($d))) ?>"><span><?= $view === 'semaine' ? e(day_short($d)) : $letters[$n] ?></span><?php if ($view === 'mois'): ?><strong><?= (int) date('j', strtotime($d)) ?></strong><?php endif; ?></a>
+            <a href="<?= e($link(['vue' => 'jour', 'date' => $d])) ?>" title="Afficher la journée du <?= e(date_fr($d)) ?>"><span><?= $view === 'semaine' ? e(day_short($d)) : $letters[$n] ?></span><?php if ($view === 'mois'): ?><strong><?= (int) date('j', strtotime($d)) ?></strong><?php endif; ?></a>
           </th>
         <?php endforeach; ?>
         <th scope="col" class="num">Total</th>

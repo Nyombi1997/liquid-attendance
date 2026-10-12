@@ -17,7 +17,7 @@ use App\Modules\Platform\Services\Departments;
  * Page « Agents » : une carte par agent (photo, titre, contacts, statut de
  * travail, heure d'arrivée du jour), filtrable par département.
  * Managers : leur département seulement (Auth::departmentScope()).
- * Modification de la fiche et de la photo : droit « manage » (administrateur) ;
+ * Modification de la fiche, de la photo et désactivation : droit « manage » (administrateur) ;
  * disponibilité (statut de travail) : droit « status » (administrateur et RH),
  * conservée dans l'historique work_statuses (affiché par le calendrier).
  */
@@ -131,6 +131,7 @@ final class AgentController extends Controller
             'email'         => mb_substr((string) $this->input('email', ''), 0, 150) ?: null,
             'phone'         => mb_substr((string) $this->input('phone', ''), 0, 40) ?: null,
             'department_id' => (int) $this->input('department_id', 0) ?: null,
+            'active'        => isset($_POST['active']) ? 1 : 0,
         ];
         $error = match (true) {
             $data['name'] === '' => 'Le nom est obligatoire.',
@@ -147,17 +148,18 @@ final class AgentController extends Controller
         }
 
         Database::run(
-            'UPDATE employees SET name = ?, job_title = ?, email = ?, phone = ?, department_id = ? WHERE id = ?',
-            [$data['name'], $data['job_title'], $data['email'], $data['phone'], $data['department_id'], $id]
+            'UPDATE employees SET name = ?, job_title = ?, email = ?, phone = ?, department_id = ?, active = ? WHERE id = ?',
+            [$data['name'], $data['job_title'], $data['email'], $data['phone'], $data['department_id'], $data['active'], $id]
         );
 
         [$photoChange] = AgentPhoto::fromForm($emp);
 
         Audit::log('agent_modifie', array_filter([
             'id' => $id, 'nom' => $data['name'], 'titre' => $data['job_title'], 'departement' => $data['department_id'],
-            'photo' => $photoChange,
+            'photo' => $photoChange, 'actif' => $data['active'] !== (int) $emp['active'] ? $data['active'] : null,
         ], static fn($v) => $v !== null));
-        flash('success', 'Fiche de ' . $data['name'] . ' enregistrée.');
+        flash('success', $data['active'] ? 'Fiche de ' . $data['name'] . ' enregistrée.'
+            : $data['name'] . ' est désactivé : ses badges ne sont plus comptés ni affichés (réactivation : Employés → Inactifs).');
         $this->redirect($back);
     }
 

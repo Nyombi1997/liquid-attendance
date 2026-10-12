@@ -133,7 +133,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 
 - **Nom des employés** : modifiable par un admin dans la plateforme uniquement ; les pointeuses ne sont jamais modifiées.
 - **Seule écriture sur les pointeuses** : la remise à l'heure de l'horloge, chaque nuit à 03:00 (décidé le 9 oct. 2026). Écart avant et après journalisé.
-- **Sortie non badgée** : la journée est marquée « sortie manquante » et ne compte aucune heure ; un admin ou les RH saisissent l'heure de sortie (tracée, annulable).
+- **Sortie non badgée** : tant que le jour n'est pas fini, la journée est « en cours » et le temps de présence avance ; une entrée badgée après une sortie (retour au bureau) annule cette sortie. Ensuite, la journée est marquée « sortie manquante » et ne compte aucune heure ; un admin ou les RH saisissent l'heure de sortie (tracée, annulable).
 - **Horaires** : saisis manuellement. Attribuables à tout le monde (horaire par défaut), à un groupe ou à un ou plusieurs agents, sur une période. Priorité agent > groupe > défaut. Horaires de nuit gérés.
 - Paramètres d'un horaire : début, fin, jours travaillés, pause déduite, tolérance de retard, seuil des heures supplémentaires.
 - **NOC et IT Room** : accès salle, historique séparé, non comptés dans la présence.

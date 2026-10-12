@@ -38,7 +38,7 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
   <div class="kpi"><span class="kpi-label">Retards</span><strong class="kpi-value"><?= $stats['late_days'] ?></strong><span class="kpi-foot"><?= minutes_label($stats['late']) ?> au total</span></div>
   <div class="kpi"><span class="kpi-label">Heures sup</span><strong class="kpi-value"><?= minutes_label($stats['overtime']) ?></strong></div>
   <div class="kpi"><span class="kpi-label">Absences</span><strong class="kpi-value"><?= $stats['absent'] ?></strong></div>
-  <?php if (can('view')): ?><div class="kpi kpi-accent"><span class="kpi-label">Sorties manquantes</span><strong class="kpi-value"><?= $stats['missing'] ?></strong></div><?php endif; ?>
+  <?php if (can('view')): ?><div class="kpi"><span class="kpi-label">Sorties manquantes</span><strong class="kpi-value"><?= $stats['missing'] ?></strong></div><?php endif; ?>
 </div>
 
 <div class="grid-main">

@@ -33,6 +33,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Calendrier** (`/calendrier`, Administrateur, RH et managers pour leur département) : une ligne par agent. Vue **Jour** façon planning (heures de 0 h à 24 h, barre de l'arrivée au départ sur fond de l'horaire prévu, trait de l'heure actuelle) ; vues **Semaine** et **Mois** (une case par jour, total de la période). Le temps passé au bureau avance **en direct** pour les agents présents ; les raisons d'absence saisies (télétravail, mission, congé, avec date de fin et note) s'affichent sur leurs jours, y compris passés (historique `work_statuses`) ; un agent **absent sans raison est en rouge**. Retard signalé en orange, départ non badgé en barre estompée.
 - **Notifications** : cloche en haut à droite sur toutes les pages, avec le nombre de badges du jour non lus (« 9+ » au-delà de 9). Un clic ouvre la liste des derniers badges (lien vers la fiche de l'agent) et les marque comme lus ; « Tout marquer comme lu » remet le compteur à zéro. Badges limités au périmètre de l'utilisateur (`/api/notifications`, toutes les 15 s) ; dernier badge lu mémorisé dans le navigateur.
 - **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH et l'administrateur peuvent saisir la disponibilité (télétravail, mission, congé ou bureau) jusqu'à une date, puis revenir à l'automatique ; c'est la seule modification ouverte aux RH. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin. Chaque saisie est conservée avec sa période (table `work_statuses`) pour le calendrier.
+- **Désactivation d'un agent** : case « Agent actif » dans « Modifier la fiche » (page Agents, administrateur) ou « Modifier l'employé ». Un agent désactivé n'est plus calculé ni affiché (Agents, tableau de bord, calendrier, cloche, derniers badges) ; son historique est conservé et il se réactive depuis Employés → filtre « Inactifs ».
 - **Départements** (`/departements`) : arborescence (un département peut avoir des sous-départements), affectation des agents depuis la carte, la fiche employé ou en lot depuis la liste des employés.
 - **Recherche avec propositions** : dans toutes les barres de recherche, les agents correspondants s'affichent dès la première lettre (nom, titre, matricule ou n° de pointeuse) ; un clic (ou flèches + Entrée) ouvre la fiche ou applique le filtre. Propositions limitées au périmètre de l'utilisateur (`/api/suggestions`).
 - **Mots de passe** : bouton « œil » sur chaque champ pour afficher ou masquer la saisie.
@@ -63,7 +64,8 @@ Pour les RH et les managers, la notion de « sortie manquante » n'apparaît nul
 | Pause | Déduite du temps de présence les jours travaillés |
 | Heures sup | Dépassement après la fin de l'horaire, compté s'il atteint le seuil de l'horaire |
 | Jour non travaillé | « Repos », ou « hors horaire » si l'agent a pointé (tout compté en heures sup) |
-| Pas de sortie | « En cours » le jour même, puis « sortie manquante » |
+| Pas de sortie | « En cours » toute la journée (le temps de présence avance), puis « sortie manquante » |
+| Entrée après la dernière sortie | L'agent est revenu : la sortie est ignorée, la journée redevient « en cours » (puis « sortie manquante » s'il ne ressort pas) |
 
 Les règles sont dans `app/Modules/Attendance/Services/DayCalculator.php` et testées par `php tests/DayCalculatorTest.php`. Le service de synchronisation est testé sans pointeuse par `python3 tests/test_sync.py` (faux module `zk` dans `tests/fakezk`, hors de l'image Docker).
 

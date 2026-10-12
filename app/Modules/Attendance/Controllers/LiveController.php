@@ -85,7 +85,8 @@ final class LiveController extends Controller
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
 
-        $scope = Departments::sql(Auth::departmentScope());
+        // Agents désactivés : leurs badges ne sont plus signalés
+        $scope = ' AND (e.id IS NULL OR e.active = 1)' . Departments::sql(Auth::departmentScope());
         $after = max(0, (int) ($_GET['after'] ?? 0));
         $since = date('Y-m-d') . ' 00:00:00';
         $unread = (int) Database::value(
@@ -128,7 +129,7 @@ final class LiveController extends Controller
                     e.id employee_id, COALESCE(e.name, CONCAT('Agent ', p.device_user_id)) employee
                FROM punches p JOIN devices d ON d.id = p.device_id
                LEFT JOIN employees e ON e.device_user_id = p.device_user_id
-              WHERE p.id > ?" . Departments::sql($this->scope) . " ORDER BY p.id DESC LIMIT " . self::MAX_PUNCHES,
+              WHERE p.id > ? AND (e.id IS NULL OR e.active = 1)" . Departments::sql($this->scope) . " ORDER BY p.id DESC LIMIT " . self::MAX_PUNCHES,
             [$since]
         );
         usort($rows, static fn($a, $b) => [$b['punched_at'], $b['id']] <=> [$a['punched_at'], $a['id']]);

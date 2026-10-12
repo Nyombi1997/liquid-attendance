@@ -47,7 +47,7 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     <span class="kpi-foot">aucun pointage d'entrée</span>
   </<?= $daily ? 'a' : 'div' ?>>
   <?php if ($full): ?>
-  <a href="/corrections" class="kpi kpi-accent">
+  <a href="/corrections" class="kpi">
     <span class="kpi-label">Sorties manquantes</span>
     <strong class="kpi-value" data-kpi="pending"><?= $kpis['pending'] ?></strong>
     <span class="kpi-foot">à corriger (30 derniers jours)</span>

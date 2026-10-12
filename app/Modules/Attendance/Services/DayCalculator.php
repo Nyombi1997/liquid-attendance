@@ -15,7 +15,10 @@ use DateTimeImmutable;
  * - Retard  : arrivée après début + tolérance → retard compté depuis l'heure de début.
  * - Heures sup : départ après la fin de l'horaire, comptées si elles atteignent le seuil.
  * - Pause déduite du temps de présence si la journée est plus longue que la pause.
- * - Pas de sortie : « en cours » le jour même, « sortie manquante » ensuite.
+ * - Pas de sortie : « en cours » toute la journée (le temps de présence avance
+ *   sans attendre de sortie), « sortie manquante » ensuite (0 h tant que non corrigée).
+ * - Une entrée badgée après la dernière sortie (agent revenu) annule cette sortie :
+ *   la journée redevient « en cours », puis « sortie manquante » s'il ne ressort pas.
  * - Jour non travaillé : « repos », ou « hors horaire » si l'agent a pointé
  *   (tout le temps passé est alors compté en heures sup).
  */
@@ -47,6 +50,10 @@ final class DayCalculator
                 if ($o > $firstIn) {
                     $lastOut = $o;
                 }
+            }
+            // Revenu après sa dernière sortie : toujours au bureau, pas de sortie
+            if ($lastOut !== null && end($ins) > $lastOut) {
+                $lastOut = null;
             }
         }
 
@@ -109,8 +116,9 @@ final class DayCalculator
             }
             $r['status'] = $r['late_minutes'] > 0 ? 'retard' : 'present';
         } else {
-            // Pas de sortie : en cours tant que la journée n'est pas finie
-            $r['status'] = $now <= $expEnd->modify('+6 hours') ? 'en_cours' : 'sortie_manquante';
+            // Pas de sortie : en cours jusqu'à la fin du jour (ou fin d'horaire + 6 h la nuit)
+            $r['status'] = $now->format('Y-m-d') <= $date || $now <= $expEnd->modify('+6 hours')
+                ? 'en_cours' : 'sortie_manquante';
         }
 
         return $r;

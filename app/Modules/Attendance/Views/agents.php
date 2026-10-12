@@ -172,6 +172,10 @@ foreach ($tree['nodes'] as $n) {
             <option value="0">Aucun</option>
             <?php foreach ($departments as $d): ?><option value="<?= (int) $d['id'] ?>"><?= str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) ?></option><?php endforeach; ?>
           </select></label>
+        <div>
+          <label class="check"><input type="checkbox" name="active" value="1" checked data-agent-active> Agent actif</label>
+          <p class="hint">Décocher pour désactiver : l'agent et ses badges disparaissent des pages, de la cloche et du calendrier ; l'historique est conservé.</p>
+        </div>
       </div>
     </div>
     <div class="dialog-actions">

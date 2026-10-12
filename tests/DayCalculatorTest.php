@@ -32,6 +32,14 @@ check('sortie manquante', C::compute($s,'2026-10-05',['2026-10-05 08:00:00','202
   ['status'=>'sortie_manquante','last_out'=>null,'first_in'=>'2026-10-05 08:00:00']);
 check('en cours le jour même', C::compute($s,'2026-10-05',['2026-10-05 08:00:00'],[],null,new DateTimeImmutable('2026-10-05 15:00:00')),
   ['status'=>'en_cours']);
+check('en cours tard le soir, sans sortie', C::compute($s,'2026-10-05',['2026-10-05 08:00:00'],[],null,new DateTimeImmutable('2026-10-05 23:30:00')),
+  ['status'=>'en_cours','last_out'=>null]);
+check('revenu après sa sortie : en cours', C::compute($s,'2026-10-05',['2026-10-05 08:00:00','2026-10-05 13:00:00'],['2026-10-05 12:00:00'],null,new DateTimeImmutable('2026-10-05 15:00:00')),
+  ['status'=>'en_cours','last_out'=>null,'first_in'=>'2026-10-05 08:00:00']);
+check('revenu, jamais ressorti : sortie manquante', C::compute($s,'2026-10-05',['2026-10-05 08:00:00','2026-10-05 13:00:00'],['2026-10-05 12:00:00'],null,$later),
+  ['status'=>'sortie_manquante','last_out'=>null,'worked_minutes'=>0]);
+check('revenu puis ressorti', C::compute($s,'2026-10-05',['2026-10-05 08:00:00','2026-10-05 13:00:00'],['2026-10-05 12:00:00','2026-10-05 17:00:00'],null,$later),
+  ['status'=>'present','last_out'=>'2026-10-05 17:00:00','worked_minutes'=>480]);
 check('correction admin', C::compute($s,'2026-10-05',['2026-10-05 08:00:00'],[],'2026-10-05 17:00:00',$later),
   ['status'=>'present','worked_minutes'=>480]);
 check('sortie avant entrée ignorée', C::compute($s,'2026-10-05',['2026-10-05 08:00:00'],['2026-10-05 07:00:00'],null,$later),

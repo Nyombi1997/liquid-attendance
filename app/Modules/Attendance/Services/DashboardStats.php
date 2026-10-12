@@ -69,7 +69,7 @@ final class DashboardStats
         return $trend;
     }
 
-    /** Derniers pointages, du plus récent au plus ancien. */
+    /** Derniers pointages, du plus récent au plus ancien (sans les agents désactivés). */
     public static function latestPunches(int $limit = 8, ?array $scope = null): array
     {
         return Database::all(
@@ -77,7 +77,7 @@ final class DashboardStats
                     COALESCE(e.name, CONCAT('Agent ', p.device_user_id)) employee, e.id employee_id
                FROM punches p JOIN devices d ON d.id = p.device_id
                LEFT JOIN employees e ON e.device_user_id = p.device_user_id
-              WHERE 1" . Departments::sql($scope) . "
+              WHERE (e.id IS NULL OR e.active = 1)" . Departments::sql($scope) . "
               ORDER BY p.punched_at DESC, p.id DESC LIMIT " . max(1, $limit)
         );
     }

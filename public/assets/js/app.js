@@ -362,6 +362,7 @@
         const v = data[input.dataset.field];
         input.value = v === null || v === undefined ? (input.tagName === 'SELECT' ? '0' : '') : v;
       });
+      form.querySelector('[data-agent-active]').checked = true; // la page n'affiche que les agents actifs
       cropper.reset(data.photo);
       dialog.showModal();
       if (pickPhoto) cropper.pick();
