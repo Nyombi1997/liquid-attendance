@@ -5,7 +5,7 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
 ?>
 <div class="page-head">
   <div class="person person-lg">
-    <span class="avatar avatar-lg"><?= e(initials($emp['name'])) ?></span>
+    <?= avatar($emp['name'], photo_url($emp), 'avatar avatar-lg') ?>
     <div>
       <h1><?= e($emp['name']) ?> <?= $emp['active'] ? '' : '<span class="badge badge-muted">Inactif</span>' ?></h1>
       <p class="muted">N° pointeuse <code><?= e($emp['device_user_id']) ?></code>

@@ -7,16 +7,29 @@ SET NAMES utf8mb4;
 -- Socle commun
 -- ---------------------------------------------------------------------------
 
+-- Départements (arborescence : un département peut avoir un parent).
+-- Un manager ne voit que les agents de son département et de ses sous-départements.
+CREATE TABLE departments (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,
+  parent_id  INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_dept_parent (parent_id),
+  CONSTRAINT fk_dept_parent FOREIGN KEY (parent_id) REFERENCES departments(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE users (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username      VARCHAR(60)  NOT NULL UNIQUE,
   full_name     VARCHAR(120) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role          ENUM('admin','rh','lecteur') NOT NULL DEFAULT 'lecteur',
+  role          ENUM('admin','rh','ceo','manager','lecteur') NOT NULL DEFAULT 'lecteur',
+  department_id INT UNSIGNED NULL COMMENT 'département du manager',
   active        TINYINT(1)   NOT NULL DEFAULT 1,
   last_login_at DATETIME     NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_user_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE login_attempts (
@@ -51,20 +64,33 @@ CREATE TABLE employee_groups (
 -- device_user_id : numéro technique enregistré sur les pointeuses.
 -- name           : nom affiché dans la plateforme (modifiable par un admin).
 -- device_name    : nom tel qu'il figure sur la pointeuse (lecture seule).
+-- photo_updated_at : photo présente (storage/photos/<id>.jpg) si renseigné.
+-- work_status    : statut saisi par les RH (NULL = automatique : « au bureau »
+--                  dès le premier badge du jour), valable jusqu'à work_status_until.
 CREATE TABLE employees (
-  id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  device_user_id VARCHAR(20)  NOT NULL UNIQUE,
-  name           VARCHAR(120) NOT NULL,
-  device_name    VARCHAR(120) NULL,
-  matricule      VARCHAR(40)  NULL,
-  email          VARCHAR(150) NULL,
-  phone          VARCHAR(40)  NULL,
-  group_id       INT UNSIGNED NULL,
-  active         TINYINT(1)   NOT NULL DEFAULT 1,
-  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  device_user_id    VARCHAR(20)  NOT NULL UNIQUE,
+  name              VARCHAR(120) NOT NULL,
+  job_title         VARCHAR(120) NULL,
+  device_name       VARCHAR(120) NULL,
+  matricule         VARCHAR(40)  NULL,
+  email             VARCHAR(150) NULL,
+  phone             VARCHAR(40)  NULL,
+  group_id          INT UNSIGNED NULL,
+  department_id     INT UNSIGNED NULL,
+  photo_updated_at  DATETIME     NULL,
+  work_status       ENUM('bureau','teletravail','mission','conge') NULL,
+  work_status_until DATE         NULL COMMENT 'fin du statut saisi (incluse), NULL = sans fin',
+  work_status_note  VARCHAR(255) NULL,
+  work_status_by    INT UNSIGNED NULL,
+  work_status_at    DATETIME     NULL,
+  active            TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_emp_name (name),
-  CONSTRAINT fk_emp_group FOREIGN KEY (group_id) REFERENCES employee_groups(id) ON DELETE SET NULL
+  CONSTRAINT fk_emp_group FOREIGN KEY (group_id) REFERENCES employee_groups(id) ON DELETE SET NULL,
+  CONSTRAINT fk_emp_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+  CONSTRAINT fk_emp_status_by FOREIGN KEY (work_status_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------------

@@ -11,8 +11,13 @@
     <?= csrf_field() ?>
     <label class="field"><span>Nom affiché dans la plateforme</span>
       <input name="name" value="<?= e(old('name', $emp['name'])) ?>" maxlength="120" required>
-      <small class="hint">Les pointeuses ne sont pas modifiées.</small></label>
+      <small class="hint">Les pointeuses ne sont pas modifiées. Photo et statut : depuis la page <a href="/agents">Agents</a>.</small></label>
     <div class="grid-2 gap-sm">
+      <label class="field"><span>Titre / poste</span><input name="job_title" value="<?= e(old('job_title', $emp['job_title'])) ?>" maxlength="120"></label>
+      <label class="field"><span>Département</span>
+        <select name="department_id"><option value="0">Aucun</option>
+          <?php foreach ($departments as $d): ?><option value="<?= (int) $d['id'] ?>" <?= (int) old('department_id', $emp['department_id']) === $d['id'] ? 'selected' : '' ?>><?= str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) ?></option><?php endforeach; ?>
+        </select></label>
       <label class="field"><span>Matricule</span><input name="matricule" value="<?= e(old('matricule', $emp['matricule'])) ?>" maxlength="40"></label>
       <label class="field"><span>Groupe</span>
         <select name="group_id"><option value="0">Aucun</option>

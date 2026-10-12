@@ -14,29 +14,46 @@ $active = static function (string ...$prefixes) use ($path): string {
     }
     return '';
 };
-$nav = [
-    'Présence' => [
-        ['/', 'dashboard', 'Tableau de bord', ['/']],
-        ['/presence', 'calendar', 'Présence du jour', ['/presence']],
-        ['/corrections', 'alert', 'Sorties manquantes', ['/corrections']],
-        ['/acces', 'door', 'Accès aux salles', ['/acces']],
-        ['/horaires', 'clock', 'Horaires', ['/horaires']],
-    ],
-    'Personnel' => [
-        ['/employes', 'users', 'Employés', ['/employes']],
-        ['/groupes', 'layers', 'Groupes', ['/groupes']],
-    ],
-    'Modules' => [
-        ['/flotte', 'car', 'Parc automobile', ['/flotte']],
-        ['/conges', 'sun', 'Congés', ['/conges']],
-    ],
-    'Administration' => [
-        ['/pointeuses', 'fingerprint', 'Pointeuses', ['/pointeuses']],
-    ],
+// Menu selon le rôle : la direction et les managers commencent par la page Agents
+$agents = ['/agents', 'id-card', 'Agents', ['/agents']];
+$presence = [
+    ['/', 'dashboard', 'Tableau de bord', ['/']],
+    ['/presence', 'calendar', 'Présence du jour', ['/presence']],
 ];
-if (can('admin')) {
-    $nav['Administration'][] = ['/utilisateurs', 'shield', 'Utilisateurs', ['/utilisateurs']];
-    $nav['Administration'][] = ['/journal', 'list', 'Journal d\'activité', ['/journal']];
+if (!can('view')) {
+    // Manager : son département uniquement
+    $nav = ['Mon département' => array_merge([$agents], $presence)];
+} else {
+    $nav = [
+        'Présence' => array_merge(
+            Auth::home() === '/agents' ? [$agents] : [],
+            $presence,
+            Auth::home() === '/agents' ? [] : [$agents],
+            [
+                ['/corrections', 'alert', 'Sorties manquantes', ['/corrections']],
+                ['/acces', 'door', 'Accès aux salles', ['/acces']],
+                ['/horaires', 'clock', 'Horaires', ['/horaires']],
+            ]
+        ),
+        'Personnel' => [
+            ['/employes', 'users', 'Employés', ['/employes']],
+            ['/groupes', 'layers', 'Groupes', ['/groupes']],
+        ],
+        'Modules' => [
+            ['/flotte', 'car', 'Parc automobile', ['/flotte']],
+            ['/conges', 'sun', 'Congés', ['/conges']],
+        ],
+        'Administration' => [
+            ['/pointeuses', 'fingerprint', 'Pointeuses', ['/pointeuses']],
+        ],
+    ];
+    if (can('manage')) {
+        array_splice($nav['Personnel'], 1, 0, [['/departements', 'sitemap', 'Départements', ['/departements']]]);
+    }
+    if (can('admin')) {
+        $nav['Administration'][] = ['/utilisateurs', 'shield', 'Utilisateurs', ['/utilisateurs']];
+        $nav['Administration'][] = ['/journal', 'list', 'Journal d\'activité', ['/journal']];
+    }
 }
 ?><!doctype html>
 <html lang="fr">
@@ -48,13 +65,14 @@ if (can('admin')) {
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="<?= e(asset('img/icon-192.png')) ?>">
   <link rel="apple-touch-icon" href="<?= e(asset('img/icon-192.png')) ?>">
+  <link rel="stylesheet" href="<?= e(asset('vendor/fontawesome/css/all.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
   <script src="<?= e(asset('js/app.js')) ?>" defer></script>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="/">
+    <a class="brand" href="<?= e(Auth::home()) ?>">
       <img src="<?= e(asset('img/logo.svg')) ?>" alt="" width="34" height="34">
       <span><?= e(Config::get('app_name')) ?></span>
     </a>
@@ -75,9 +93,9 @@ if (can('admin')) {
   <div class="main">
     <header class="topbar">
       <button class="menu-toggle" type="button" data-toggle-sidebar aria-label="Menu"><?= icon('menu') ?></button>
-      <form class="search" action="/employes" method="get" role="search">
+      <form class="search" action="<?= can('view') ? '/employes' : '/agents' ?>" method="get" role="search">
         <?= icon('search') ?>
-        <input type="search" name="q" placeholder="Rechercher un employé…" aria-label="Rechercher un employé">
+        <input type="search" name="q" placeholder="Rechercher un <?= can('view') ? 'employé' : 'agent' ?>…" aria-label="Rechercher">
       </form>
       <div class="topbar-right">
         <span class="live-status" data-live-status hidden role="status" aria-live="polite">
@@ -90,7 +108,7 @@ if (can('admin')) {
         <span class="today"><?= e(ucfirst(date_fr(date('Y-m-d')))) ?></span>
         <a class="user-chip" href="/profil">
           <span class="avatar"><?= e(initials($user['full_name'] ?? '?')) ?></span>
-          <span class="user-meta"><strong><?= e($user['full_name'] ?? '') ?></strong><small><?= e(Auth::ROLES[$user['role'] ?? ''] ?? '') ?></small></span>
+          <span class="user-meta"><strong><?= e($user['full_name'] ?? '') ?></strong><small><?= e(Auth::ROLES[$user['role'] ?? ''] ?? '') ?><?php if (($user['role'] ?? '') === 'manager' && $user['department_id']): ?> · <?= e(App\Modules\Platform\Services\Departments::all()[(int) $user['department_id']]['name'] ?? '') ?><?php endif; ?></small></span>
         </a>
       </div>
     </header>

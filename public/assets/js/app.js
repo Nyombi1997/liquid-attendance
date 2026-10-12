@@ -61,9 +61,302 @@
     update();
   }
 
+  // Comptes : le champ « Département » ne concerne que le rôle Manager
+  $$('[data-role-select]').forEach((select) => {
+    const field = select.closest('form').querySelector('[data-role-department]');
+    if (!field) return;
+    const update = () => { field.hidden = select.value !== 'manager'; };
+    select.addEventListener('change', update);
+    update();
+  });
+
+  // Boutons « Copier » (e-mail, téléphone…) : data-copy="texte à copier"
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // Repli : navigateur sans API presse-papiers
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.className = 'visually-hidden';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      return ok;
+    }
+  };
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if (!btn) return;
+    const ok = await copyText(btn.dataset.copy);
+    const icon = btn.querySelector('i');
+    const label = btn.getAttribute('aria-label');
+    btn.classList.toggle('is-copied', ok);
+    btn.title = ok ? 'Copié !' : 'Copie impossible';
+    if (icon) icon.className = ok ? 'fa-solid fa-check' : 'fa-solid fa-xmark';
+    btn.setAttribute('aria-label', ok ? 'Copié' : 'Copie impossible');
+    clearTimeout(btn._copyTimer);
+    btn._copyTimer = setTimeout(() => {
+      btn.classList.remove('is-copied');
+      btn.title = 'Copier';
+      if (icon) icon.className = 'fa-regular fa-copy';
+      btn.setAttribute('aria-label', label);
+    }, 1600);
+  });
+
+  // Arbre des départements : replier / déplier
+  $$('[data-dept-toggle]').forEach((btn) => btn.addEventListener('click', () => {
+    const li = btn.closest('li');
+    const collapsed = li.classList.toggle('is-collapsed');
+    btn.setAttribute('aria-expanded', String(!collapsed));
+  }));
+
+  // Page Agents : puces de filtre, recherche, fiches et statuts
+  const grid = document.querySelector('[data-agent-grid]');
+  if (grid) setupAgents(grid);
+
+  function setupAgents(gridEl) {
+    const cards = $$('[data-agent]', gridEl);
+    const search = document.querySelector('[data-agent-search]');
+    const empty = document.querySelector('[data-agents-empty]');
+    const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    let filter = 'tous';
+
+    const apply = () => {
+      const q = fold(search?.value.trim());
+      let shown = 0;
+      cards.forEach((card) => {
+        const ok = card.dataset.filters.split(' ').includes(filter) && (!q || fold(card.dataset.search).includes(q));
+        card.hidden = !ok;
+        shown += ok ? 1 : 0;
+      });
+      if (empty) empty.hidden = shown > 0;
+    };
+    const recount = () => {
+      $$('[data-filter-count]').forEach((n) => {
+        n.textContent = cards.filter((c) => c.dataset.filters.split(' ').includes(n.dataset.filterCount)).length;
+      });
+    };
+    $$('[data-agent-filter]').forEach((chip) => chip.addEventListener('click', () => {
+      filter = chip.dataset.agentFilter;
+      $$('[data-agent-filter]').forEach((c) => {
+        c.classList.toggle('is-active', c === chip);
+        c.setAttribute('aria-pressed', String(c === chip));
+      });
+      apply();
+    }));
+    search?.addEventListener('input', apply);
+    if (search?.value) apply();
+    // Appelé par le mode direct après la mise à jour d'une carte
+    gridEl.refreshFilters = () => { recount(); apply(); };
+
+    // -- Fiche (nom, titre, contacts, département, photo) ---------------------
+    const dialog = document.querySelector('[data-agent-dialog]');
+    const statusDialog = document.querySelector('[data-status-dialog]');
+    const cropper = dialog ? createCropper(dialog.querySelector('[data-cropper]')) : null;
+
+    gridEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-agent-edit]');
+      if (!btn) return;
+      const card = btn.closest('[data-agent]');
+      const data = JSON.parse(card.dataset.agentJson || '{}');
+      if (btn.dataset.agentEdit === 'status') openStatus(data);
+      else openProfile(data, btn.dataset.agentEdit === 'photo');
+    });
+
+    function openProfile(data, pickPhoto) {
+      if (!dialog) return;
+      const form = dialog.querySelector('[data-agent-form]');
+      form.action = form.dataset.action.replace('{id}', data.id);
+      $$('[data-field]', form).forEach((input) => {
+        const v = data[input.dataset.field];
+        input.value = v === null || v === undefined ? (input.tagName === 'SELECT' ? '0' : '') : v;
+      });
+      cropper.reset(data.photo);
+      dialog.showModal();
+      if (pickPhoto) cropper.pick();
+    }
+
+    function openStatus(data) {
+      if (!statusDialog) return;
+      const form = statusDialog.querySelector('[data-status-form]');
+      form.action = form.dataset.action.replace('{id}', data.id);
+      statusDialog.querySelector('[data-status-name]').textContent = data.name;
+      const current = data.work_status || '';
+      $$('input[name="work_status"]', form).forEach((r) => { r.checked = r.value === current; });
+      $$('[data-field]', form).forEach((input) => { input.value = data[input.dataset.field] || ''; });
+      const extra = form.querySelector('[data-status-extra]');
+      const sync = () => { extra.hidden = (form.querySelector('input[name="work_status"]:checked')?.value || '') === ''; };
+      form.onchange = sync;
+      sync();
+      statusDialog.showModal();
+    }
+  }
+
+  /**
+   * Recadrage carré d'une photo, sans dépendance : faire glisser pour déplacer,
+   * molette / curseur pour zoomer, flèches du clavier pour ajuster.
+   * À l'envoi du formulaire, l'image recadrée (512 × 512, JPEG) est placée dans
+   * le champ caché photo_data, contrôlé par AgentController::decodePhoto().
+   */
+  function createCropper(root) {
+    const OUT = 512;
+    const canvas = root.querySelector('[data-crop-canvas]');
+    const stage = canvas.parentElement;
+    const ctx = canvas.getContext('2d');
+    const file = root.querySelector('[data-crop-file]');
+    const zoom = root.querySelector('[data-crop-zoom]');
+    const zoomField = root.querySelector('[data-crop-zoom-field]');
+    const current = root.querySelector('[data-crop-current]');
+    const placeholder = root.querySelector('[data-crop-placeholder]');
+    const hint = root.querySelector('[data-crop-hint]');
+    const removeField = root.closest('form').querySelector('[data-photo-remove-field]');
+    const remove = root.closest('form').querySelector('[data-photo-remove]');
+    const output = root.closest('form').querySelector('[data-crop-output]');
+    const hintText = hint.textContent;
+    const SIZE = canvas.width; // taille d'affichage, en pixels CSS
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = canvas.height = Math.round(SIZE * ratio);
+    canvas.style.width = canvas.style.height = `${SIZE}px`;
+    let img = null;
+    let x = 0; let y = 0; // décalage du centre de l'image par rapport au centre du cadre
+    let drag = null;
+
+    const base = () => Math.max(SIZE / img.naturalWidth, SIZE / img.naturalHeight);
+    const dims = () => {
+      const s = base() * parseFloat(zoom.value);
+      return [img.naturalWidth * s, img.naturalHeight * s];
+    };
+    const clamp = () => {
+      const [w, h] = dims();
+      x = Math.min((w - SIZE) / 2, Math.max(-(w - SIZE) / 2, x));
+      y = Math.min((h - SIZE) / 2, Math.max(-(h - SIZE) / 2, y));
+    };
+    const paint = (context, size) => {
+      const k = size / SIZE;
+      const [w, h] = dims();
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, size, size);
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(img, (SIZE / 2 + x - w / 2) * k, (SIZE / 2 + y - h / 2) * k, w * k, h * k);
+    };
+    const draw = () => {
+      if (!img) return;
+      clamp();
+      paint(ctx, canvas.width);
+    };
+    const show = (mode) => {
+      // mode : 'empty' | 'current' (photo enregistrée) | 'edit' (nouvelle photo)
+      canvas.hidden = mode !== 'edit';
+      current.hidden = mode !== 'current';
+      placeholder.hidden = mode !== 'empty';
+      zoomField.hidden = mode !== 'edit';
+      stage.classList.toggle('has-image', mode === 'edit');
+    };
+
+    file.addEventListener('change', () => {
+      const f = file.files[0];
+      if (!f) return;
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type) || f.size > 15 * 1024 * 1024) {
+        hint.textContent = 'Choisissez une image JPEG, PNG ou WebP de moins de 15 Mo.';
+        file.value = '';
+        return;
+      }
+      // Lecture en data: (la CSP n'autorise pas les images blob:)
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => {
+          if (image.naturalWidth < 128 || image.naturalHeight < 128) {
+            hint.textContent = 'Image trop petite (128 × 128 pixels au minimum).';
+            return;
+          }
+          img = image;
+          x = 0; y = 0; zoom.value = '1';
+          hint.textContent = 'Faites glisser pour cadrer le visage, zoomez avec le curseur ou la molette.';
+          if (remove) remove.checked = false;
+          show('edit');
+          draw();
+          canvas.focus();
+        };
+        image.onerror = () => { hint.textContent = 'Image illisible.'; };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(f);
+      file.value = '';
+    });
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!img) return;
+      drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x, y };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      x = drag.x + (e.clientX - drag.sx);
+      y = drag.y + (e.clientY - drag.sy);
+      draw();
+    });
+    const stop = () => { drag = null; };
+    canvas.addEventListener('pointerup', stop);
+    canvas.addEventListener('pointercancel', stop);
+    canvas.addEventListener('wheel', (e) => {
+      if (!img) return;
+      e.preventDefault();
+      zoom.value = Math.min(4, Math.max(1, parseFloat(zoom.value) * (e.deltaY < 0 ? 1.08 : 1 / 1.08)));
+      draw();
+    }, { passive: false });
+    canvas.addEventListener('keydown', (e) => {
+      if (!img) return;
+      const step = e.shiftKey ? 20 : 5;
+      const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+      if (moves[e.key]) {
+        x += moves[e.key][0]; y += moves[e.key][1];
+      } else if (e.key === '+' || e.key === '=') {
+        zoom.value = Math.min(4, parseFloat(zoom.value) + 0.1);
+      } else if (e.key === '-') {
+        zoom.value = Math.max(1, parseFloat(zoom.value) - 0.1);
+      } else {
+        return;
+      }
+      e.preventDefault();
+      draw();
+    });
+    zoom.addEventListener('input', draw);
+    remove?.addEventListener('change', () => {
+      img = null;
+      show(remove.checked || !current.getAttribute('src') ? 'empty' : 'current');
+    });
+
+    root.closest('form').addEventListener('submit', () => {
+      output.value = '';
+      if (!img) return;
+      const out = document.createElement('canvas');
+      out.width = out.height = OUT;
+      paint(out.getContext('2d'), OUT);
+      output.value = out.toDataURL('image/jpeg', 0.88);
+    });
+
+    return {
+      reset(photoUrl) {
+        img = null;
+        output.value = '';
+        hint.textContent = hintText;
+        if (remove) remove.checked = false;
+        if (removeField) removeField.hidden = !photoUrl;
+        if (photoUrl) current.src = photoUrl; else current.removeAttribute('src');
+        show(photoUrl ? 'current' : 'empty');
+      },
+      pick() { file.click(); },
+    };
+  }
+
   // Mode direct : pages qui portent data-live (tableau de bord, présence du
-  // jour, pointeuses). Appelle /api/direct toutes les 5 s (60 s si l'onglet
-  // est caché) et met à jour la page sans la recharger.
+  // jour, agents, pointeuses). Appelle /api/direct toutes les 5 s (60 s si
+  // l'onglet est caché) et met à jour la page sans la recharger.
   const live = document.querySelector('[data-live]');
   if (live) startLive(live);
 
@@ -231,7 +524,7 @@
         const li = el('li');
         li.dataset.late = `${l.id}:${l.late_minutes}:${l.first_in}`;
         const a = el('a', 'list-item');
-        a.href = `/employes/${l.id}`;
+        a.href = latesList.dataset.lateHref === 'agents' ? '/agents' : `/employes/${l.id}`;
         const main = el('span', 'list-main');
         main.append(el('strong', '', l.name), el('small', '', `${l.group_name} · arrivé à ${l.first_in}`));
         a.append(el('span', 'avatar avatar-sm', initials(l.name)), main, el('span', 'badge badge-warn', `+${l.late_minutes} min`));
@@ -291,9 +584,11 @@
     const bar = document.querySelector('[data-live-bar]');
     const matches = (d) => {
       const group = parseInt(root.dataset.liveGroup, 10) || 0;
+      const deps = (root.dataset.liveDeps || '').split(',').filter(Boolean).map(Number);
       const st = root.dataset.liveStatus || '';
       const q = fold(root.dataset.liveQ);
       return (!group || d.group_id === group)
+        && (!deps.length || deps.includes(d.department_id))
         && (st ? d.status === st : d.status !== 'repos')
         && (!q || fold(d.name).includes(q) || fold(d.matricule).includes(q) || d.device_user_id === root.dataset.liveQ);
     };
@@ -325,6 +620,44 @@
       });
     };
 
+    // -- Page Agents : heure d'arrivée et statut de chaque carte ----------------
+    // L'état est calculé par le serveur (days[].card, AgentStatus) : on l'affiche tel quel.
+    const fa = (cls) => { const i = el('i', cls); i.setAttribute('aria-hidden', 'true'); return i; };
+    const updateCards = (days) => {
+      const gridEl = document.querySelector('[data-agent-grid]');
+      if (!gridEl) return;
+      let changed = false;
+      days.forEach((d) => {
+        const card = gridEl.querySelector(`[data-agent="${d.employee_id}"]`);
+        if (!card || !d.card) return;
+        const { arrival, work, filters } = d.card;
+        const sig = `${arrival.kind}|${arrival.label}|${d.late_minutes}|${work.key}`;
+        if (card.dataset.liveSig === sig) return;
+        const first = card.dataset.liveSig === undefined;
+        card.dataset.liveSig = sig;
+
+        const arr = card.querySelector('[data-agent-arrival]');
+        const before = `${arr.className}|${arr.textContent.trim()}`;
+        arr.className = `agent-arrival arrival-${arrival.kind}`;
+        arr.title = arrival.title;
+        const icon = arrival.kind === 'late' ? 'fa-solid fa-clock' : (arrival.kind === 'ontime' ? 'fa-solid fa-circle-check' : 'fa-regular fa-clock');
+        const parts = [fa(icon), document.createTextNode(' '), el('span', '', arrival.label)];
+        if (arrival.kind === 'late') parts.push(el('small', '', `+${d.late_minutes} min`));
+        arr.replaceChildren(...parts);
+
+        const st = card.querySelector('[data-agent-status]');
+        st.className = `agent-status status-${work.variant}`;
+        st.title = st.tagName === 'BUTTON' ? `${work.title} · cliquer pour modifier` : work.title;
+        st.setAttribute('aria-label', st.tagName === 'BUTTON' ? `${work.label}, modifier le statut` : work.label);
+        st.replaceChildren(fa(work.icon));
+
+        card.dataset.filters = filters.join(' ');
+        changed = true;
+        if (!first || before !== `${arr.className}|${arr.textContent.trim()}`) fresh(card);
+      });
+      if (changed) gridEl.refreshFilters?.();
+    };
+
     // -- Appels ----------------------------------------------------------------
     const apply = (data) => {
       state.skew = parse(data.server_time) - Date.now();
@@ -349,6 +682,8 @@
         updateDeviceDots(data.devices || []);
       } else if (page === 'presence') {
         updateRows(data.days || []);
+      } else if (page === 'agents') {
+        updateCards(data.days || []);
       } else if (page === 'devices') {
         updateDeviceRows(data.devices || []);
       }

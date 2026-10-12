@@ -28,7 +28,23 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Accès aux salles** (NOC, IT Room) : historique des entrées, séparé du calcul de présence.
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
-- **Export CSV** (compatible Excel), **journal d'activité**, rôles **Administrateur / RH / Lecteur**.
+- **Page Agents** (`/agents`) : une carte par agent avec photo, titre, e-mail et téléphone (copiables d'un clic), département, groupe, **heure d'arrivée du jour** (vert : à l'heure, orange : en retard, rouge : pas arrivé) et **statut de travail** en haut à droite (au bureau, télétravail, mission, congé). Filtres par département (arbre à gauche), par état (à l'heure, en retard, pas arrivés…) et recherche instantanée. Mise à jour en direct.
+- **Fiche agent depuis la carte** (Admin, RH) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG).
+- **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH peuvent saisir télétravail, mission, congé ou bureau jusqu'à une date, puis revenir à l'automatique. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin.
+- **Départements** (`/departements`) : arborescence (un département peut avoir des sous-départements), affectation des agents depuis la carte, la fiche employé ou en lot depuis la liste des employés.
+- **Export CSV** (compatible Excel), **journal d'activité**, rôles ci-dessous.
+
+### Rôles
+
+| Rôle | Accès | Page d'accueil |
+|---|---|---|
+| Administrateur | Tout : comptes, pointeuses, journal, et tout ce que font les RH | Tableau de bord |
+| Ressources humaines | Agents (fiche, photo, statut), départements, groupes, horaires, corrections ; tous les départements | Tableau de bord |
+| Direction (CEO) | Toutes les pages de consultation, tous les départements, **aucune modification** | Agents |
+| Manager de département | Page Agents, tableau de bord et présence **du jour** de son département et de ses sous-départements uniquement | Agents |
+| Lecteur | Consultation et export, sans modification | Tableau de bord |
+
+Le département d'un manager se choisit dans **Administration > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, photos et `/api/direct`).
 
 ### Règles de calcul
 
@@ -153,6 +169,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 
 ```bash
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
+sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/002_agents.sql
 ```
 
 Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
@@ -160,6 +177,9 @@ Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`,
 | Migration | Contenu |
 |---|---|
 | `001_live.sql` | Mode direct : `devices.last_event_at` (dernier badge reçu), `devices.live_since` (écoute en direct active), index sur `attendance_days.computed_at` |
+| `002_agents.sql` | Page Agents : table `departments`, rôles `ceo` et `manager` + `users.department_id`, colonnes `employees.job_title`, `department_id`, `photo_updated_at`, `work_status*` |
+
+Les photos des agents sont enregistrées dans `./data/storage/photos` (volume monté dans le conteneur `app`, hors du dossier public) : elles sont conservées lors des mises à jour et incluses dans la sauvegarde de `./data`.
 
 ### Sauvegarde de la base
 
@@ -179,17 +199,18 @@ sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSW
 app/
   Core/                    noyau MVC : routeur, base, vues, authentification, CSRF, journal
   Modules/
-    Platform/              socle commun : connexion, profil, utilisateurs, modules à venir
+    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments), modules à venir
     Attendance/            module Présence
-      Controllers/         une classe par écran ; LiveController (/api/direct)
-      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs)
+      Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), LiveController (/api/direct)
+      Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs), AgentStatus (pastilles des cartes)
       Views/
   Views/                   gabarit commun, pages d'erreur
 bin/                       compute.php (calcul), create-admin.php
 config/config.php          configuration lue depuis .env
 database/                  schema.sql, seed.sql (chargés au premier démarrage), migrations/
 docker/                    images app (Apache + HTTPS) et worker
-public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes)
+public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes), assets/vendor/fontawesome (Font Awesome Free 6.7.2, servi localement)
+storage/                   fichiers déposés (photos) ; en production : volume ./data/storage
 worker/                    sync.py (connexion permanente aux pointeuses, calculs), run.sh (lancement)
 tests/                     règles de calcul (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
@@ -198,8 +219,9 @@ Chaque futur module (Fleet, Leave) aura son dossier dans `app/Modules/` et réut
 
 ### Sécurité
 
-- HTTPS uniquement (port 8443), en-têtes HSTS et CSP stricte (aucun script externe).
+- HTTPS uniquement (port 8443), en-têtes HSTS et CSP stricte (aucun script ni style externe : Font Awesome est servi depuis `public/assets/vendor`).
+- Photos hors du dossier public, servies par `/agents/{id}/photo` après contrôle du rôle et du département ; seuls des JPEG carrés de 128 à 1024 px et 1,5 Mo au plus sont acceptés.
 - Mots de passe hachés, 12 caractères minimum, 5 échecs en 15 minutes bloquent la connexion.
 - Jeton CSRF sur chaque formulaire, cookie de session `Secure`, `HttpOnly`, `SameSite=Strict`.
-- Rôles vérifiés côté serveur sur chaque route, journal de toutes les modifications.
+- Rôles vérifiés côté serveur sur chaque route, périmètre des managers appliqué à chaque requête, journal de toutes les modifications.
 - Pointeuses en lecture seule, sauf la remise à l'heure nocturne de l'horloge ; seule la VM peut les joindre (pare-feu MikroTik).

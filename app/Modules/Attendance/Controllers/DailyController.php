@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 namespace App\Modules\Attendance\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Modules\Attendance\Services\DashboardStats;
+use App\Modules\Platform\Services\Departments;
 
-/** Présence d'une journée (ou d'une période), filtrable et exportable. */
+/**
+ * Présence d'une journée (ou d'une période), filtrable et exportable.
+ * Manager : journée d'aujourd'hui uniquement, agents de son département.
+ */
 final class DailyController extends Controller
 {
     private const STATUSES = ['present', 'retard', 'absent', 'sortie_manquante', 'en_cours', 'repos', 'hors_horaire'];
@@ -27,6 +32,7 @@ final class DailyController extends Controller
             'rows'    => $rows,
             'totals'  => $totals,
             'groups'  => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
+            'departments' => Departments::tree(Departments::roots(Auth::departmentScope())),
             // Mode direct seulement pour la journée d'aujourd'hui
             'live'    => $filters['from'] === $today && $filters['to'] === $today ? DashboardStats::liveState($today) : null,
         ]);
@@ -54,10 +60,12 @@ final class DailyController extends Controller
     private function query(): array
     {
         $date = fn($v, $d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $v) ? $v : $d;
+        $scope = Auth::departmentScope();
         $f = [
             'from'   => $date($this->input('from'), date('Y-m-d')),
             'to'     => null,
             'group'  => (int) $this->input('group', 0),
+            'dep'    => (int) $this->input('dep', 0),
             'status' => in_array($this->input('status'), self::STATUSES, true) ? $this->input('status') : '',
             'q'      => mb_substr((string) $this->input('q', ''), 0, 60),
         ];
@@ -65,9 +73,18 @@ final class DailyController extends Controller
         if ($f['to'] < $f['from']) {
             $f['to'] = $f['from'];
         }
+        if (!Auth::can('view')) {
+            // Manager : présence du jour seulement
+            $f['from'] = $f['to'] = date('Y-m-d');
+        }
+        if ($f['dep'] && $scope !== null && !in_array($f['dep'], $scope, true)) {
+            $f['dep'] = 0;
+        }
 
         $where = ['e.active = 1', 'd.work_date BETWEEN ? AND ?'];
         $params = [$f['from'], $f['to']];
+        $deps = $f['dep'] ? Departments::descendants($f['dep']) : $scope;
+        $where[] = '1' . Departments::sql($deps);
         if ($f['group']) {
             $where[] = 'e.group_id = ?';
             $params[] = $f['group'];
@@ -84,7 +101,7 @@ final class DailyController extends Controller
         }
 
         $rows = Database::all(
-            'SELECT d.*, e.name, e.matricule, g.name group_name, s.name schedule_name
+            'SELECT d.*, e.name, e.matricule, e.department_id, e.photo_updated_at, g.name group_name, s.name schedule_name
                FROM attendance_days d
                JOIN employees e ON e.id = d.employee_id
                LEFT JOIN employee_groups g ON g.id = e.group_id

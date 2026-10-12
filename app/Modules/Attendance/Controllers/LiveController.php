@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 namespace App\Modules\Attendance\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
+use App\Modules\Platform\Services\Departments;
 
 /**
  * Mode « en direct » : GET /api/direct, appelé toutes les 5 s par les pages
@@ -15,6 +18,8 @@ use App\Modules\Attendance\Services\DashboardStats;
  * Renvoie les nouveaux pointages, les journées du jour modifiées, les
  * indicateurs du tableau de bord et l'état des pointeuses.
  * Sans session : 401 {"error":"session"} (contrôle fait par le routeur).
+ * Manager : pointages, journées et indicateurs de son département seulement,
+ * pas d'état des pointeuses (Auth::departmentScope()).
  */
 final class LiveController extends Controller
 {
@@ -24,11 +29,15 @@ final class LiveController extends Controller
     // La page ignore les lignes qui n'ont pas changé.
     private const DAY_OVERLAP_SEC = 15;
 
+    /** @var int[]|null départements visibles, null = tous */
+    private ?array $scope = null;
+
     public function index(): void
     {
         // Utilisateur vérifié par le routeur : libère le verrou de session
         // pour ne pas bloquer les autres onglets pendant la requête.
         session_write_close();
+        $this->scope = Auth::departmentScope();
 
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
@@ -52,15 +61,15 @@ final class LiveController extends Controller
             'punches'              => $sincePunch > 0 && $lastPunch > $sincePunch ? $this->punches($sincePunch) : [],
             'days'                 => $days,
             'last_day_computed_at' => $lastDay,
-            'kpis'                 => DashboardStats::kpis($today),
+            'kpis'                 => DashboardStats::kpis($today, $this->scope),
             'lates'                => array_map(static fn(array $l) => [
                 'id'          => (int) $l['id'],
                 'name'        => $l['name'],
                 'group_name'  => $l['group_name'] ?? 'Sans groupe',
                 'first_in'    => time_label($l['first_in']),
                 'late_minutes'=> (int) $l['late_minutes'],
-            ], DashboardStats::lates($today)),
-            'devices'              => $this->devices(),
+            ], DashboardStats::lates($today, $this->scope)),
+            'devices'              => $this->scope === null ? $this->devices() : [],
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -72,7 +81,7 @@ final class LiveController extends Controller
                     e.id employee_id, COALESCE(e.name, CONCAT('Agent ', p.device_user_id)) employee
                FROM punches p JOIN devices d ON d.id = p.device_id
                LEFT JOIN employees e ON e.device_user_id = p.device_user_id
-              WHERE p.id > ? ORDER BY p.id DESC LIMIT " . self::MAX_PUNCHES,
+              WHERE p.id > ?" . Departments::sql($this->scope) . " ORDER BY p.id DESC LIMIT " . self::MAX_PUNCHES,
             [$since]
         );
         usort($rows, static fn($a, $b) => [$b['punched_at'], $b['id']] <=> [$a['punched_at'], $a['id']]);
@@ -96,22 +105,26 @@ final class LiveController extends Controller
         }
         $rows = Database::all(
             'SELECT d.employee_id, d.first_in, d.last_out, d.corrected_out, d.correction_note, d.worked_minutes,
-                    d.late_minutes, d.overtime_minutes, d.status, d.computed_at,
-                    e.name, e.matricule, e.device_user_id, e.group_id
+                    d.late_minutes, d.overtime_minutes, d.status, d.computed_at, d.expected_start,
+                    e.name, e.matricule, e.device_user_id, e.group_id, e.department_id,
+                    e.work_status, e.work_status_until, e.work_status_note
                FROM attendance_days d JOIN employees e ON e.id = d.employee_id
               WHERE d.computed_at >= ? - INTERVAL ' . self::DAY_OVERLAP_SEC . ' SECOND
-                AND d.work_date = ? AND e.active = 1
+                AND d.work_date = ? AND e.active = 1' . Departments::sql($this->scope) . '
               ORDER BY d.computed_at LIMIT 500',
             [$since, $today]
         );
-        $days = array_map(static function (array $d): array {
+        $days = array_map(static function (array $d) use ($today): array {
             [$statusLabel, $statusClass] = status_info($d['status']);
+            $work = AgentStatus::work($d, $d['first_in'], $today);
+            $arrival = AgentStatus::arrival($d, $work['key']);
             return [
                 'employee_id'      => (int) $d['employee_id'],
                 'name'             => $d['name'],
                 'matricule'        => $d['matricule'],
                 'device_user_id'   => $d['device_user_id'],
                 'group_id'         => $d['group_id'] !== null ? (int) $d['group_id'] : null,
+                'department_id'    => $d['department_id'] !== null ? (int) $d['department_id'] : null,
                 'first_in'         => $d['first_in'],
                 'last_out'         => $d['last_out'],
                 'worked_minutes'   => (int) $d['worked_minutes'],
@@ -121,6 +134,12 @@ final class LiveController extends Controller
                 'computed_at'      => $d['computed_at'],
                 'corrected'        => $d['corrected_out'] !== null,
                 'correction_note'  => $d['correction_note'] ?? 'Saisie manuelle',
+                // Carte de la page Agents : état déjà calculé, la page ne fait que l'afficher
+                'card'             => [
+                    'arrival' => $arrival,
+                    'work'    => array_diff_key($work, ['manual' => 1]),
+                    'filters' => AgentStatus::filters($work['key'], $arrival['kind']),
+                ],
                 'labels'           => [
                     'first_in' => time_label($d['first_in']),
                     'last_out' => time_label($d['last_out']),

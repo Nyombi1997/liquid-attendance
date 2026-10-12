@@ -1,4 +1,17 @@
-<?php use App\Core\Auth; ?>
+<?php
+use App\Core\Auth;
+use App\Modules\Platform\Services\Departments;
+
+// Liste des départements pour le champ « Département » (rôle Manager)
+$deptOptions = static function (?int $selected) use ($departments): string {
+    $html = '<option value="0">Choisir…</option>';
+    foreach ($departments as $d) {
+        $html .= '<option value="' . $d['id'] . '"' . ($selected === $d['id'] ? ' selected' : '') . '>'
+            . str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) . '</option>';
+    }
+    return $html;
+};
+?>
 <div class="page-head">
   <div>
     <h1>Utilisateurs</h1>
@@ -7,21 +20,24 @@
   <button class="btn btn-primary" type="button" data-dialog="new-user"><?= icon('plus') ?> Nouveau compte</button>
 </div>
 
-<div class="grid-3 role-help">
-  <div class="card card-flat"><strong>Administrateur</strong><p class="muted">Tout, y compris les comptes et les pointeuses.</p></div>
-  <div class="card card-flat"><strong>Ressources humaines</strong><p class="muted">Employés, groupes, horaires et corrections.</p></div>
-  <div class="card card-flat"><strong>Lecteur</strong><p class="muted">Consultation et export, sans modification.</p></div>
+<div class="role-help">
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-shield') ?> Administrateur</strong><p class="muted">Tout, y compris les comptes et les pointeuses.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-tie') ?> Ressources humaines</strong><p class="muted">Agents (fiche, photo, statut), départements, groupes, horaires, corrections. Tous les départements.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-crown') ?> Direction (CEO)</strong><p class="muted">Voit tous les départements et toutes les pages, sans aucune modification. Arrive sur la page Agents.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-people-group') ?> Manager</strong><p class="muted">Page Agents, tableau de bord et présence du jour de son département uniquement.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-eye') ?> Lecteur</strong><p class="muted">Consultation et export, sans modification.</p></div>
 </div>
 
 <section class="card table-card">
   <table class="table">
-    <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
+    <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Département</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($users as $u): ?>
       <tr>
         <td><div class="person"><span class="avatar avatar-sm"><?= e(initials($u['full_name'])) ?></span><?= e($u['full_name']) ?></div></td>
         <td><?= e($u['username']) ?></td>
         <td><?= e(Auth::ROLES[$u['role']]) ?></td>
+        <td><?= $u['role'] === 'manager' ? ($u['department_id'] ? e(Departments::path((int) $u['department_id'])) : '<span class="badge badge-danger">À choisir</span>') : '<span class="muted">Tous</span>' ?></td>
         <td><?= $u['last_login_at'] ? e(date('d/m/Y H:i', strtotime($u['last_login_at']))) : '<span class="muted">jamais</span>' ?></td>
         <td><?= $u['active'] ? '<span class="badge badge-ok">Actif</span>' : '<span class="badge badge-muted">Désactivé</span>' ?></td>
         <td class="actions"><button class="btn btn-ghost btn-sm" type="button" data-dialog="user-<?= (int) $u['id'] ?>">Modifier</button></td>
@@ -38,7 +54,10 @@
     <label class="field"><span>Nom complet</span><input name="full_name" value="<?= e(old('full_name')) ?>" required></label>
     <label class="field"><span>Identifiant</span><input name="username" value="<?= e(old('username')) ?>" pattern="[a-zA-Z0-9._\-]{3,60}" required></label>
     <label class="field"><span>Rôle</span>
-      <select name="role"><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>"><?= e($l) ?></option><?php endforeach; ?></select></label>
+      <select name="role" data-role-select><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= old('role', 'lecteur') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
+    <label class="field" data-role-department><span>Département du manager</span>
+      <select name="department_id"><?= $deptOptions((int) old('department_id', 0) ?: null) ?></select>
+      <small class="hint">Le manager voit aussi les sous-départements.<?= $departments ? '' : ' Aucun département : <a href="/departements">les créer d\'abord</a>.' ?></small></label>
     <label class="field"><span>Mot de passe provisoire (12 caractères minimum)</span><input type="password" name="password" minlength="12" autocomplete="new-password" required></label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
@@ -54,7 +73,9 @@
     <h2><?= e($u['username']) ?></h2>
     <label class="field"><span>Nom complet</span><input name="full_name" value="<?= e($u['full_name']) ?>" required></label>
     <label class="field"><span>Rôle</span>
-      <select name="role"><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= $u['role'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
+      <select name="role" data-role-select><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= $u['role'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
+    <label class="field" data-role-department><span>Département du manager</span>
+      <select name="department_id"><?= $deptOptions($u['department_id'] !== null ? (int) $u['department_id'] : null) ?></select></label>
     <label class="field"><span>Nouveau mot de passe (laisser vide pour ne pas changer)</span><input type="password" name="password" minlength="12" autocomplete="new-password"></label>
     <label class="check"><input type="checkbox" name="active" value="1" <?= $u['active'] ? 'checked' : '' ?>> Compte actif</label>
     <div class="dialog-actions">

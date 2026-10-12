@@ -3,7 +3,11 @@
 # 1. Si aucun certificat n'existe encore, en crée un auto-signé provisoire
 #    (remplacé par celui de Let's Encrypt dès qu'il est émis).
 # 2. Surveille le certificat et recharge Apache quand acme.sh le renouvelle.
+# 3. Prépare le dossier des fichiers déposés (photos), monté depuis ./data/storage.
 set -e
+
+mkdir -p /var/www/app/storage/photos
+chown -R www-data:www-data /var/www/app/storage
 
 CERT=/certs/fullchain.pem
 KEY=/certs/privkey.pem

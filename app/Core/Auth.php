@@ -3,16 +3,28 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use App\Modules\Platform\Services\Departments;
+
 /**
  * Authentification et rôles.
  *   admin   : tout, y compris utilisateurs et pointeuses
- *   rh      : employés, groupes, horaires, corrections
+ *   rh      : employés, départements, groupes, horaires, corrections, statuts des agents
+ *   ceo     : consultation de tous les départements, aucune modification
+ *   manager : page Agents, tableau de bord et présence du jour de son département uniquement
  *   lecteur : consultation uniquement
+ *
+ * Droits (« abilities ») vérifiés par le routeur sur chaque route :
+ *   board  : page Agents, tableau de bord, présence du jour, /api/direct, profil
+ *   view   : toutes les pages de consultation
+ *   manage : modifications courantes (RH)
+ *   admin  : comptes, pointeuses, journal
+ * Les données d'un manager sont en plus filtrées par departmentScope().
  */
 final class Auth
 {
     private const ABILITIES = [
-        'view'   => ['admin', 'rh', 'lecteur'],
+        'board'  => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
+        'view'   => ['admin', 'rh', 'ceo', 'lecteur'],
         'manage' => ['admin', 'rh'],
         'admin'  => ['admin'],
     ];
@@ -20,8 +32,13 @@ final class Auth
     public const ROLES = [
         'admin'   => 'Administrateur',
         'rh'      => 'Ressources humaines',
+        'ceo'     => 'Direction (CEO)',
+        'manager' => 'Manager de département',
         'lecteur' => 'Lecteur',
     ];
+
+    /** @var int[]|null|false false = pas encore calculé */
+    private static array|null|false $scope = false;
 
     private static ?array $user = null;
 
@@ -29,7 +46,7 @@ final class Auth
     {
         if (self::$user === null && !empty($_SESSION['user_id'])) {
             self::$user = Database::one(
-                'SELECT id, username, full_name, role FROM users WHERE id = ? AND active = 1',
+                'SELECT id, username, full_name, role, department_id FROM users WHERE id = ? AND active = 1',
                 [$_SESSION['user_id']]
             );
             if (self::$user === null) {
@@ -48,6 +65,34 @@ final class Auth
     {
         $user = self::user();
         return $user !== null && in_array($user['role'], self::ABILITIES[$ability] ?? [], true);
+    }
+
+    public static function role(): ?string
+    {
+        return self::user()['role'] ?? null;
+    }
+
+    /**
+     * Départements visibles : null = tous ; sinon le département du manager et
+     * ses sous-départements (liste vide si aucun département n'est attribué).
+     * À appliquer à toute requête sur les agents, avec Departments::sql().
+     *
+     * @return int[]|null
+     */
+    public static function departmentScope(): ?array
+    {
+        if (self::$scope === false) {
+            $user = self::user();
+            self::$scope = ($user['role'] ?? null) !== 'manager' ? null
+                : ($user['department_id'] ? Departments::descendants((int) $user['department_id']) : []);
+        }
+        return self::$scope;
+    }
+
+    /** Page d'accueil après connexion : la page Agents pour la direction et les managers. */
+    public static function home(): string
+    {
+        return in_array(self::role(), ['manager', 'ceo'], true) ? '/agents' : '/';
     }
 
     public static function isThrottled(string $username, string $ip): bool
@@ -78,6 +123,7 @@ final class Auth
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int) $user['id'];
         self::$user = null;
+        self::$scope = false;
         Database::run('UPDATE users SET last_login_at = NOW() WHERE id = ?', [$user['id']]);
         Audit::log('connexion');
         return true;
@@ -93,5 +139,6 @@ final class Auth
         }
         session_destroy();
         self::$user = null;
+        self::$scope = false;
     }
 }

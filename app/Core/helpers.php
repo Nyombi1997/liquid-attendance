@@ -153,6 +153,28 @@ function icon(string $name, string $class = 'icon'): string
     return '<svg class="' . e($class) . '" aria-hidden="true"><use href="' . e($sprite) . '#' . e($name) . '"></use></svg>';
 }
 
+/** URL de la photo d'un agent (versionnée par sa date de mise à jour), ou null. */
+function photo_url(array $emp): ?string
+{
+    return !empty($emp['photo_updated_at'])
+        ? '/agents/' . (int) $emp['id'] . '/photo?v=' . strtotime($emp['photo_updated_at'])
+        : null;
+}
+
+/** Pastille ronde : photo de l'agent si elle existe, sinon ses initiales. */
+function avatar(string $name, ?string $photo, string $class = 'avatar avatar-sm'): string
+{
+    return $photo
+        ? '<img class="' . e($class) . ' avatar-img" src="' . e($photo) . '" alt="" loading="lazy">'
+        : '<span class="' . e($class) . '">' . e(initials($name)) . '</span>';
+}
+
+/** Icône Font Awesome Free (public/assets/vendor/fontawesome), ex. fa('fa-solid fa-plane'). */
+function fa(string $classes, string $extra = ''): string
+{
+    return '<i class="' . e(trim($classes . ' ' . $extra)) . '" aria-hidden="true"></i>';
+}
+
 function client_ip(): string
 {
     return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';

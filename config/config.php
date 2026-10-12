@@ -15,6 +15,9 @@ return [
         'user'     => $env('DB_USER', 'liquid'),
         'password' => $env('DB_PASSWORD', ''),
     ],
+    // Fichiers déposés dans la plateforme (photos des agents : <storage>/photos/<id>.jpg).
+    // Monté sur ./data/storage par docker compose : conservé lors des mises à jour.
+    'storage_path' => $env('STORAGE_PATH', dirname(__DIR__) . '/storage'),
     // Cookie de session réservé au HTTPS (désactivable pour un test local en HTTP)
     'session_secure' => $env('SESSION_SECURE', '1') !== '0',
     // Connexion : 5 échecs en 15 minutes bloquent le couple identifiant/IP

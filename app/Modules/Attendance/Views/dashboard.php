@@ -6,13 +6,17 @@ $w = 640; $h = 200; $pad = 28; $n = count($trend);
 $slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
 $series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
 $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
+$full = can('view'); // false : manager, limité à son département et aux pages du jour
 ?>
 <div class="page-head" data-live="dashboard" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($today) ?>">
   <div>
     <h1>Tableau de bord</h1>
-    <p class="muted">Présence de <?= e(date_fr($today)) ?>, mise à jour en direct à chaque badge.</p>
+    <p class="muted">Présence de <?= e(date_fr($today)) ?><?= $scoped ? ' dans votre département' : '' ?>, mise à jour en direct à chaque badge.</p>
   </div>
-  <a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a>
+  <div class="head-actions">
+    <a class="btn btn-outline" href="/agents"><?= icon('id-card') ?> Agents</a>
+    <a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a>
+  </div>
 </div>
 
 <div class="kpis">
@@ -32,18 +36,18 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     <strong class="kpi-value" data-kpi="absent"><?= $kpis['absent'] ?></strong>
     <span class="kpi-foot">aucun pointage d'entrée</span>
   </a>
-  <a class="kpi kpi-accent" href="/corrections">
+  <<?= $full ? 'a href="/corrections"' : 'div' ?> class="kpi kpi-accent">
     <span class="kpi-label">Sorties manquantes</span>
     <strong class="kpi-value" data-kpi="pending"><?= $kpis['pending'] ?></strong>
     <span class="kpi-foot">à corriger (30 derniers jours)</span>
-  </a>
+  </<?= $full ? 'a' : 'div' ?>>
 </div>
 
 <div class="grid-main">
   <section class="card">
     <div class="card-head">
       <h2>Tendance sur 14 jours</h2>
-      <a class="link" href="/presence?from=<?= e(array_key_first($trend)) ?>&amp;to=<?= e($today) ?>">Voir le détail</a>
+      <?php if ($full): ?><a class="link" href="/presence?from=<?= e(array_key_first($trend)) ?>&amp;to=<?= e($today) ?>">Voir le détail</a><?php endif; ?>
     </div>
     <svg class="chart" viewBox="0 0 <?= $w ?> <?= $h + 22 ?>" role="img" aria-label="Présence quotidienne sur 14 jours">
       <?php foreach ([0, 0.5, 1] as $g): $y = $h - $g * ($h - 10); ?>
@@ -67,9 +71,9 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
   <section class="card">
     <div class="card-head"><h2>Retards du jour</h2><a class="link" href="/presence?status=retard">Tous</a></div>
     <p class="muted empty-line" data-lates-empty<?= $lates ? ' hidden' : '' ?>>Aucun retard pour l'instant.</p>
-    <ul class="list" data-lates>
+    <ul class="list" data-lates data-late-href="<?= $full ? 'employes' : 'agents' ?>">
       <?php foreach ($lates as $l): ?>
-        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="/employes/<?= (int) $l['id'] ?>" class="list-item">
+        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="<?= $full ? '/employes/' . (int) $l['id'] : '/agents' ?>" class="list-item">
           <span class="avatar avatar-sm"><?= e(initials($l['name'])) ?></span>
           <span class="list-main"><strong><?= e($l['name']) ?></strong><small><?= e($l['group_name'] ?? 'Sans groupe') ?> · arrivé à <?= e(time_label($l['first_in'])) ?></small></span>
           <span class="badge badge-warn">+<?= (int) $l['late_minutes'] ?> min</span>
@@ -79,9 +83,9 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
   </section>
 </div>
 
-<div class="grid-2">
+<div class="<?= $devices ? 'grid-2' : '' ?>">
   <section class="card">
-    <div class="card-head"><h2>Derniers pointages</h2><a class="link" href="/acces">Accès aux salles</a></div>
+    <div class="card-head"><h2>Derniers pointages</h2><?php if ($full): ?><a class="link" href="/acces">Accès aux salles</a><?php endif; ?></div>
     <ul class="list" data-punches>
       <?php foreach ($punches as $p): ?>
         <li class="list-item" data-punched-at="<?= e($p['punched_at']) ?>" data-punch-id="<?= (int) $p['id'] ?>">
@@ -94,6 +98,7 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     </ul>
   </section>
 
+  <?php if ($devices): ?>
   <section class="card">
     <div class="card-head"><h2>Pointeuses</h2><a class="link" href="/pointeuses">Détails</a></div>
     <ul class="list" data-devices>
@@ -109,4 +114,5 @@ $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
       <?php endforeach; ?>
     </ul>
   </section>
+  <?php endif; ?>
 </div>

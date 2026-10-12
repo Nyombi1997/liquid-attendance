@@ -8,6 +8,7 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Modules\Attendance\Services\AttendanceComputer;
 use App\Modules\Attendance\Services\ScheduleResolver;
+use App\Modules\Platform\Services\Departments;
 
 final class EmployeeController extends Controller
 {
@@ -34,9 +35,10 @@ final class EmployeeController extends Controller
         }
 
         $employees = Database::all(
-            'SELECT e.*, g.name group_name,
+            'SELECT e.*, g.name group_name, dp.name department_name,
                     (SELECT MAX(punched_at) FROM punches p WHERE p.device_user_id = e.device_user_id) last_punch
                FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id
+               LEFT JOIN departments dp ON dp.id = e.department_id
               WHERE ' . implode(' AND ', $where) . ' ORDER BY e.name',
             $params
         );
@@ -45,6 +47,7 @@ final class EmployeeController extends Controller
             'title'     => 'Employés',
             'employees' => $employees,
             'groups'    => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
+            'departments' => Departments::tree(),
             'q'         => $q,
             'group'     => $group,
             'state'     => $state,
@@ -106,6 +109,7 @@ final class EmployeeController extends Controller
             'title'  => 'Modifier ' . $emp['name'],
             'emp'    => $emp,
             'groups' => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
+            'departments' => Departments::tree(),
         ]);
     }
 
@@ -114,6 +118,8 @@ final class EmployeeController extends Controller
         $emp = Database::one('SELECT * FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
         $data = [
             'name'      => mb_substr((string) $this->input('name', ''), 0, 120),
+            'job_title' => mb_substr((string) $this->input('job_title', ''), 0, 120) ?: null,
+            'department_id' => (int) $this->input('department_id', 0) ?: null,
             'matricule' => mb_substr((string) $this->input('matricule', ''), 0, 40) ?: null,
             'email'     => mb_substr((string) $this->input('email', ''), 0, 150) ?: null,
             'phone'     => mb_substr((string) $this->input('phone', ''), 0, 40) ?: null,
@@ -131,9 +137,15 @@ final class EmployeeController extends Controller
             $this->redirect("/employes/$id/modifier");
         }
 
+        if ($data['department_id'] !== null && !isset(Departments::all()[$data['department_id']])) {
+            $data['department_id'] = null;
+        }
+
         Database::run(
-            'UPDATE employees SET name = ?, matricule = ?, email = ?, phone = ?, group_id = ?, active = ? WHERE id = ?',
-            [$data['name'], $data['matricule'], $data['email'], $data['phone'], $data['group_id'], $data['active'], $id]
+            'UPDATE employees SET name = ?, job_title = ?, matricule = ?, email = ?, phone = ?, group_id = ?, department_id = ?, active = ?
+              WHERE id = ?',
+            [$data['name'], $data['job_title'], $data['matricule'], $data['email'], $data['phone'], $data['group_id'],
+                $data['department_id'], $data['active'], $id]
         );
         Audit::log('employe_modifie', ['id' => $id, 'avant' => $emp['name'], 'apres' => $data['name']]);
 
@@ -143,6 +155,22 @@ final class EmployeeController extends Controller
         }
         flash('success', 'Fiche employé enregistrée.');
         $this->redirect("/employes/$id");
+    }
+
+    /** Affecte plusieurs employés à un département en une fois (sans recalcul : pas d'effet sur les horaires). */
+    public function bulkDepartment(): void
+    {
+        $ids = array_values(array_filter(array_map('intval', (array) ($_POST['ids'] ?? []))));
+        $depId = (int) $this->input('department_id', 0) ?: null;
+        if (!$ids || ($depId !== null && !isset(Departments::all()[$depId]))) {
+            flash('error', $ids ? 'Département introuvable.' : 'Aucun employé sélectionné.');
+            $this->back();
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        Database::run("UPDATE employees SET department_id = ? WHERE id IN ($in)", array_merge([$depId], $ids));
+        Audit::log('employes_departement', ['departement' => $depId, 'employes' => $ids]);
+        flash('success', count($ids) . ' employé(s) mis à jour.');
+        $this->back();
     }
 
     /** Affecte plusieurs employés à un groupe en une fois. */

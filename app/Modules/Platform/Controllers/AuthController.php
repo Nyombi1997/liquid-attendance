@@ -11,7 +11,7 @@ final class AuthController extends Controller
     public function showLogin(): void
     {
         if (Auth::user()) {
-            $this->redirect('/');
+            $this->redirect(Auth::home());
         }
         $this->render('Platform:login', ['title' => 'Connexion'], 'auth');
     }
@@ -33,7 +33,8 @@ final class AuthController extends Controller
 
         $to = $_SESSION['_intended'] ?? '/';
         unset($_SESSION['_intended'], $_SESSION['_old']);
-        $this->redirect(str_starts_with($to, '/') && !str_starts_with($to, '//') ? $to : '/');
+        $valid = str_starts_with($to, '/') && !str_starts_with($to, '//');
+        $this->redirect($valid && $to !== '/' ? $to : Auth::home());
     }
 
     public function logout(): void

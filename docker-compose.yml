@@ -23,6 +23,8 @@ services:
       - "8443:8443"
     volumes:
       - ./data/certs:/certs
+      # Photos des agents (hors de public/, servies par /agents/{id}/photo)
+      - ./data/storage:/var/www/app/storage
     depends_on:
       db:
         condition: service_healthy
