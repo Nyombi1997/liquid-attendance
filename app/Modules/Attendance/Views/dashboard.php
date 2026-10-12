@@ -6,7 +6,9 @@ $w = 640; $h = 200; $pad = 28; $n = count($trend);
 $slot = ($w - $pad) / max(1, $n); $bar = min(24, $slot * 0.55);
 $series = ['present' => 'Présents', 'retard' => 'Retards', 'incomplet' => 'Sortie manquante / en cours', 'absent' => 'Absents'];
 $jours = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
-$full = can('view'); // false : manager, limité à son département et aux pages du jour
+$full = can('view'); // false : manager (son département, pages du jour) ou RH
+$daily = can('presence'); // présence du jour : pas pour les RH
+$staff = can('staff'); // fiche employé : pas pour les managers
 ?>
 <div class="page-head" data-live="dashboard" data-live-since-punch="<?= (int) $live['punch'] ?>" data-live-since-day="<?= e($live['day']) ?>" data-live-date="<?= e($today) ?>">
   <div>
@@ -15,7 +17,7 @@ $full = can('view'); // false : manager, limité à son département et aux page
   </div>
   <div class="head-actions">
     <a class="btn btn-outline" href="/agents"><?= icon('id-card') ?> Agents</a>
-    <a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a>
+    <?php if ($daily): ?><a class="btn btn-primary" href="/presence"><?= icon('calendar') ?> Présence du jour</a><?php endif; ?>
   </div>
 </div>
 
@@ -26,16 +28,16 @@ $full = can('view'); // false : manager, limité à son département et aux page
     <div class="meter" role="img" data-kpi-meter aria-label="<?= $rate ?> % des agents attendus"><svg viewBox="0 0 100 6" preserveAspectRatio="none"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-fill" width="<?= min(100, $rate) ?>" height="6" rx="3"/></svg></div>
     <span class="kpi-foot"><span data-kpi="rate"><?= $rate ?></span> % des agents attendus</span>
   </div>
-  <a class="kpi" href="/presence?status=retard">
+  <<?= $daily ? 'a href="/presence?status=retard"' : 'div' ?> class="kpi">
     <span class="kpi-label">Retards</span>
     <strong class="kpi-value" data-kpi="late"><?= $kpis['late'] ?></strong>
     <span class="kpi-foot">au-delà de la tolérance</span>
-  </a>
-  <a class="kpi" href="/presence?status=absent">
+  </<?= $daily ? 'a' : 'div' ?>>
+  <<?= $daily ? 'a href="/presence?status=absent"' : 'div' ?> class="kpi">
     <span class="kpi-label">Absents</span>
     <strong class="kpi-value" data-kpi="absent"><?= $kpis['absent'] ?></strong>
     <span class="kpi-foot">aucun pointage d'entrée</span>
-  </a>
+  </<?= $daily ? 'a' : 'div' ?>>
   <<?= $full ? 'a href="/corrections"' : 'div' ?> class="kpi kpi-accent">
     <span class="kpi-label">Sorties manquantes</span>
     <strong class="kpi-value" data-kpi="pending"><?= $kpis['pending'] ?></strong>
@@ -69,11 +71,11 @@ $full = can('view'); // false : manager, limité à son département et aux page
   </section>
 
   <section class="card">
-    <div class="card-head"><h2>Retards du jour</h2><a class="link" href="/presence?status=retard">Tous</a></div>
+    <div class="card-head"><h2>Retards du jour</h2><?php if ($daily): ?><a class="link" href="/presence?status=retard">Tous</a><?php endif; ?></div>
     <p class="muted empty-line" data-lates-empty<?= $lates ? ' hidden' : '' ?>>Aucun retard pour l'instant.</p>
-    <ul class="list" data-lates data-late-href="<?= $full ? 'employes' : 'agents' ?>">
+    <ul class="list" data-lates data-late-href="<?= $staff ? 'employes' : 'agents' ?>">
       <?php foreach ($lates as $l): ?>
-        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="<?= $full ? '/employes/' . (int) $l['id'] : '/agents' ?>" class="list-item">
+        <li data-late="<?= (int) $l['id'] ?>:<?= (int) $l['late_minutes'] ?>:<?= e(time_label($l['first_in'])) ?>"><a href="<?= $staff ? '/employes/' . (int) $l['id'] : '/agents' ?>" class="list-item">
           <span class="avatar avatar-sm"><?= e(initials($l['name'])) ?></span>
           <span class="list-main"><strong><?= e($l['name']) ?></strong><small><?= e($l['group_name'] ?? 'Sans groupe') ?> · arrivé à <?= e(time_label($l['first_in'])) ?></small></span>
           <span class="badge badge-warn">+<?= (int) $l['late_minutes'] ?> min</span>
@@ -100,7 +102,7 @@ $full = can('view'); // false : manager, limité à son département et aux page
 
   <?php if ($devices): ?>
   <section class="card">
-    <div class="card-head"><h2>Pointeuses</h2><a class="link" href="/pointeuses">Détails</a></div>
+    <div class="card-head"><h2>Pointeuses</h2><?php if ($full): ?><a class="link" href="/pointeuses">Détails</a><?php endif; ?></div>
     <ul class="list" data-devices>
       <?php foreach ($devices as $d):
         $ok = $d['last_sync_ok'] === 1 || $d['last_sync_ok'] === '1';

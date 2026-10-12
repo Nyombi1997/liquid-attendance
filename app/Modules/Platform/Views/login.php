@@ -19,7 +19,7 @@
       <?= csrf_field() ?>
       <label class="field">
         <span>Identifiant</span>
-        <input type="text" name="username" value="<?= e(old('username')) ?>" autocomplete="username" required autofocus>
+        <input type="text" name="username" value="<?= e(old('username')) ?>" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
       </label>
       <label class="field">
         <span>Mot de passe</span>

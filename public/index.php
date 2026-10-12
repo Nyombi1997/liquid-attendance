@@ -33,8 +33,8 @@ $r->get('/flotte', [P\ModuleController::class, 'fleet']);
 $r->get('/conges', [P\ModuleController::class, 'leave']);
 
 // Employés et groupes (liste commune à tous les modules)
-$r->get('/employes', [A\EmployeeController::class, 'index']);
-$r->get('/employes/{id}', [A\EmployeeController::class, 'show']);
+$r->get('/employes', [A\EmployeeController::class, 'index'], 'staff');
+$r->get('/employes/{id}', [A\EmployeeController::class, 'show'], 'staff');
 $r->get('/employes/{id}/modifier', [A\EmployeeController::class, 'edit'], 'manage');
 $r->post('/employes/{id}', [A\EmployeeController::class, 'update']);
 $r->post('/employes/groupe', [A\EmployeeController::class, 'bulkGroup']);
@@ -44,21 +44,22 @@ $r->post('/groupes', [A\GroupController::class, 'store']);
 $r->post('/groupes/{id}', [A\GroupController::class, 'update']);
 $r->post('/groupes/{id}/supprimer', [A\GroupController::class, 'destroy']);
 
-// Agents (cartes avec photo) : managers limités à leur département
+// Agents (cartes avec photo) : managers limités à leur département ; RH : disponibilité seulement
 $r->get('/agents', [A\AgentController::class, 'index'], 'board');
 $r->get('/agents/{id}/photo', [A\AgentController::class, 'photo'], 'board');
 $r->post('/agents/{id}', [A\AgentController::class, 'update']);
-$r->post('/agents/{id}/statut', [A\AgentController::class, 'status']);
+$r->post('/agents/{id}/statut', [A\AgentController::class, 'status'], 'status');
 
-// Présence (tableau de bord et présence du jour : managers limités à leur département)
+// Présence (tableau de bord et présence du jour : managers limités à leur département, pas de RH)
 $r->get('/', [A\DashboardController::class, 'index'], 'board');
-$r->get('/presence', [A\DailyController::class, 'index'], 'board');
+$r->get('/presence', [A\DailyController::class, 'index'], 'presence');
 $r->get('/presence/export', [A\DailyController::class, 'export']);
 $r->get('/corrections', [A\CorrectionController::class, 'index']);
 $r->post('/corrections/{id}', [A\CorrectionController::class, 'store']);
 $r->post('/corrections/{id}/annuler', [A\CorrectionController::class, 'cancel']);
 $r->get('/acces', [A\AccessController::class, 'index']);
 $r->get('/api/direct', [A\LiveController::class, 'index'], 'board');
+$r->get('/api/suggestions', [A\EmployeeController::class, 'suggest'], 'board');
 
 // Horaires et attributions
 $r->get('/horaires', [A\ScheduleController::class, 'index']);

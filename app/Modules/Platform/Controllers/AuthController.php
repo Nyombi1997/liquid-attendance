@@ -18,7 +18,7 @@ final class AuthController extends Controller
 
     public function login(): void
     {
-        $username = (string) $this->input('username', '');
+        $username = Auth::normalizeUsername((string) $this->input('username', ''));
         $password = (string) ($_POST['password'] ?? '');
         $this->withInput();
 

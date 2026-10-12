@@ -23,15 +23,24 @@ storage/                     fichiers déposés (photos) ; en production volume 
 ### Rôles, droits et périmètre
 - Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`. Libellés dans `Auth::ROLES`.
 - Droits vérifiés par le routeur (3e argument de `$r->get/post`) :
-  - `board` : page Agents, tableau de bord, présence du jour, `/api/direct`, profil — **tous les rôles** ;
-  - `view` : toutes les pages de consultation — tous sauf `manager` ;
-  - `manage` : modifications courantes — `admin`, `rh` (défaut des routes POST) ;
+  - `board` : page Agents, tableau de bord, `/api/direct`, `/api/suggestions`, profil — **tous les rôles** ;
+  - `presence` : présence du jour — tous sauf `rh` ;
+  - `staff` : liste et fiche des employés (consultation) — tous sauf `manager` ;
+  - `view` : autres pages de consultation (défaut des routes GET) — `admin`, `ceo`, `lecteur` ;
+  - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
+  - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
   - `admin` : comptes, pointeuses, journal.
-- **CEO** : tout voir, ne rien modifier. **Manager** : uniquement son département et ses sous-départements.
+- **CEO** : tout voir, ne rien modifier. **Manager** : uniquement son département et ses sous-départements. **RH** : tableau de bord, Agents (disponibilité seulement), Employés en lecture.
 - **Toute requête qui lit des agents, des journées ou des pointages et qui est accessible à un manager doit appliquer le périmètre** :
   `Departments::sql(Auth::departmentScope())` (renvoie `''`, `' AND 0'` ou `' AND e.department_id IN (…)'`). Ne jamais l'oublier dans une nouvelle page `board` ni dans `/api/direct`.
-- Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('view')`, `can('manage')`, `can('admin')`. Un manager ne doit voir aucun lien vers une page qui lui renverrait 403.
+- Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('presence')`, `can('staff')`, `can('view')`, `can('status')`, `can('manage')`, `can('admin')`. Un manager ou un RH ne doit voir aucun lien vers une page qui lui renverrait 403.
+- Le menu de `layout.php` liste chaque entrée avec son droit (5e élément) : ajouter une page = ajouter l'entrée avec le même droit que sa route.
+- Identifiants : toujours passer par `Auth::normalizeUsername()` (minuscules) avant d'enregistrer ou de comparer.
 - Accueil après connexion : `Auth::home()` (`/agents` pour `ceo` et `manager`, `/` sinon). Le menu de `app/Views/layout.php` dépend du rôle.
+
+### Composants automatiques (app.js)
+- Tout `input[type=password]` reçoit un bouton « œil » (afficher / masquer) : rien à ajouter dans les vues.
+- Barre de recherche d'agents : ajouter `data-suggest="go"` (ouvre la fiche), `"submit"` (remplit et envoie le filtre) ou `"filter"` (filtre instantané de la page Agents). Les propositions viennent de `/api/suggestions` (périmètre appliqué côté serveur).
 
 ### Sécurité (CSP stricte, ne pas l'assouplir)
 - `default-src 'self'`, `img-src 'self' data:`, `style-src 'self'`, `script-src 'self'` (`docker/app/apache-site.conf`).

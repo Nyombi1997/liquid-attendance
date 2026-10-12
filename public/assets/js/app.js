@@ -46,6 +46,194 @@
     });
   });
 
+  // Outils partagés
+  const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const faIcon = (cls) => { const i = document.createElement('i'); i.className = cls; i.setAttribute('aria-hidden', 'true'); return i; };
+  const initialsOf = (name) => (String(name).trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || '?');
+
+  // Mots de passe : bouton « œil » pour afficher / masquer la saisie
+  $$('input[type="password"]').forEach((input) => {
+    const wrap = document.createElement('span');
+    wrap.className = 'password-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'password-toggle';
+    const icon = faIcon('fa-regular fa-eye');
+    btn.appendChild(icon);
+    const set = (visible) => {
+      input.type = visible ? 'text' : 'password';
+      icon.className = visible ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+      const label = visible ? 'Masquer le mot de passe' : 'Afficher le mot de passe';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+      btn.setAttribute('aria-pressed', String(visible));
+    };
+    set(false);
+    btn.addEventListener('click', () => {
+      set(input.type === 'password');
+      input.focus();
+    });
+    // Toujours renvoyer le champ masqué (gestionnaires de mots de passe)
+    input.form?.addEventListener('submit', () => set(false));
+    wrap.appendChild(btn);
+  });
+
+  // Barres de recherche : propositions dès la première lettre.
+  //   data-suggest="go"     : ouvre la fiche de l'agent choisi
+  //   data-suggest="submit" : met son nom dans le champ et envoie le filtre
+  //   data-suggest="filter" : met son nom dans le champ (filtre instantané de la page)
+  // Propositions : /api/suggestions (périmètre vérifié par le serveur), ou les
+  // cartes de la page Agents pour « filter ».
+  let suggestCount = 0;
+  $$('input[data-suggest]').forEach((input) => {
+    const mode = input.dataset.suggest;
+    const host = input.closest('.search, .agents-search, .field') || input.parentElement;
+    host.classList.add('suggest-host');
+    const box = document.createElement('ul');
+    box.className = 'suggest';
+    box.id = `suggest-${++suggestCount}`;
+    box.setAttribute('role', 'listbox');
+    box.hidden = true;
+    host.appendChild(box);
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-controls', box.id);
+    input.setAttribute('aria-expanded', 'false');
+    input.autocomplete = 'off';
+
+    let items = [];
+    let active = -1;
+    let timer = null;
+    let seq = 0;
+    let picking = false;
+
+    const close = () => {
+      box.hidden = true;
+      active = -1;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    };
+    const highlight = (i) => {
+      active = i;
+      $$('[role="option"]', box).forEach((li, n) => {
+        li.classList.toggle('is-active', n === i);
+        li.setAttribute('aria-selected', String(n === i));
+        if (n === i) { input.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); }
+      });
+    };
+    const choose = (item) => {
+      close();
+      if (mode === 'go') {
+        window.location.href = item.url;
+        return;
+      }
+      picking = true;
+      input.value = item.name;
+      if (mode === 'submit' && input.form) input.form.requestSubmit();
+      else input.dispatchEvent(new Event('input', { bubbles: true }));
+      picking = false;
+    };
+    const render = (q) => {
+      if (!items.length) {
+        const li = document.createElement('li');
+        li.className = 'suggest-empty';
+        li.textContent = `Aucun agent pour « ${q} »`;
+        box.replaceChildren(li);
+      } else {
+        box.replaceChildren(...items.map((item, n) => {
+          const li = document.createElement('li');
+          li.className = 'suggest-item';
+          li.id = `${box.id}-${n}`;
+          li.setAttribute('role', 'option');
+          li.setAttribute('aria-selected', 'false');
+          let pic;
+          if (item.photo) {
+            pic = document.createElement('img');
+            pic.className = 'avatar avatar-sm avatar-img';
+            pic.src = item.photo;
+            pic.alt = '';
+          } else {
+            pic = document.createElement('span');
+            pic.className = 'avatar avatar-sm';
+            pic.textContent = initialsOf(item.name);
+          }
+          const main = document.createElement('span');
+          main.className = 'suggest-main';
+          const strong = document.createElement('strong');
+          strong.textContent = item.name;
+          main.appendChild(strong);
+          if (item.detail) {
+            const small = document.createElement('small');
+            small.textContent = item.detail;
+            main.appendChild(small);
+          }
+          li.append(pic, main);
+          li.addEventListener('mousedown', (e) => e.preventDefault()); // garder le focus dans le champ
+          li.addEventListener('click', (e) => { e.preventDefault(); choose(item); });
+          return li;
+        }));
+      }
+      box.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      active = -1;
+    };
+    // Propositions locales : cartes de la page Agents
+    const localItems = (q) => $$('[data-agent]')
+      .filter((card) => fold(card.dataset.search).includes(fold(q)))
+      .slice(0, 8)
+      .map((card) => ({
+        name: card.querySelector('.agent-name')?.textContent.trim() || '',
+        detail: card.querySelector('.agent-title')?.textContent.trim() || '',
+        photo: card.querySelector('.agent-photo img')?.getAttribute('src') || null,
+      }));
+    const lookup = async () => {
+      const q = input.value.trim();
+      const mine = ++seq;
+      if (!q) { close(); return; }
+      if (mode === 'filter') {
+        items = localItems(q);
+      } else {
+        try {
+          const res = await fetch(`/api/suggestions?q=${encodeURIComponent(q)}`, {
+            headers: { Accept: 'application/json' }, credentials: 'same-origin',
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (mine !== seq) return; // une saisie plus récente a déjà répondu
+          items = data.items || [];
+        } catch (e) {
+          if (mine === seq) close();
+          return;
+        }
+      }
+      if (document.activeElement === input) render(q);
+    };
+
+    input.addEventListener('input', () => {
+      if (picking) return;
+      clearTimeout(timer);
+      timer = setTimeout(lookup, mode === 'filter' ? 0 : 120);
+    });
+    input.addEventListener('focus', () => { if (input.value.trim() && box.hidden) lookup(); });
+    input.addEventListener('blur', close);
+    input.addEventListener('keydown', (e) => {
+      if (box.hidden || !items.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        highlight((active + step + items.length) % items.length);
+      } else if (e.key === 'Enter' && active >= 0) {
+        e.preventDefault();
+        choose(items[active]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      }
+    });
+  });
+
   // Formulaire d'attribution : afficher les champs selon la cible
   const assign = document.querySelector('[data-assign]');
   if (assign) {
@@ -122,7 +310,6 @@
     const cards = $$('[data-agent]', gridEl);
     const search = document.querySelector('[data-agent-search]');
     const empty = document.querySelector('[data-agents-empty]');
-    const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     let filter = 'tous';
 
     const apply = () => {
@@ -415,7 +602,6 @@
       node[`_${cls}`] = setTimeout(() => node.classList.remove(cls), ms);
     };
     const fresh = (node) => replay(node, 'is-fresh', 3100);
-    const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
     // -- Indicateur « En direct » et interrupteur des notifications ----------
     const status = document.querySelector('[data-live-status]');

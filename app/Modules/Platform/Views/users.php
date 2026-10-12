@@ -21,8 +21,8 @@ $deptOptions = static function (?int $selected) use ($departments): string {
 </div>
 
 <div class="role-help">
-  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-shield') ?> Administrateur</strong><p class="muted">Tout, y compris les comptes et les pointeuses.</p></div>
-  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-tie') ?> Ressources humaines</strong><p class="muted">Agents (fiche, photo, statut), départements, groupes, horaires, corrections. Tous les départements.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-shield') ?> Administrateur</strong><p class="muted">Tout : seul rôle qui modifie les fiches, photos, départements, groupes, horaires, corrections, comptes et pointeuses.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-user-tie') ?> Ressources humaines</strong><p class="muted">Tableau de bord, Agents (mise à jour de la disponibilité uniquement) et Employés en consultation. Tous les départements.</p></div>
   <div class="card card-flat"><strong><?= fa('fa-solid fa-crown') ?> Direction (CEO)</strong><p class="muted">Voit tous les départements et toutes les pages, sans aucune modification. Arrive sur la page Agents.</p></div>
   <div class="card card-flat"><strong><?= fa('fa-solid fa-people-group') ?> Manager</strong><p class="muted">Page Agents, tableau de bord et présence du jour de son département uniquement.</p></div>
   <div class="card card-flat"><strong><?= fa('fa-solid fa-eye') ?> Lecteur</strong><p class="muted">Consultation et export, sans modification.</p></div>
@@ -52,7 +52,7 @@ $deptOptions = static function (?int $selected) use ($departments): string {
     <?= csrf_field() ?>
     <h2>Nouveau compte</h2>
     <label class="field"><span>Nom complet</span><input name="full_name" value="<?= e(old('full_name')) ?>" required></label>
-    <label class="field"><span>Identifiant</span><input name="username" value="<?= e(old('username')) ?>" pattern="[a-zA-Z0-9._\-]{3,60}" required></label>
+    <label class="field"><span>Identifiant</span><input name="username" value="<?= e(old('username')) ?>" pattern="[a-zA-Z0-9._\-]{3,60}" autocapitalize="none" spellcheck="false" required><small class="hint">Sans distinction de majuscules : enregistré en minuscules.</small></label>
     <label class="field"><span>Rôle</span>
       <select name="role" data-role-select><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= old('role', 'lecteur') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
     <label class="field" data-role-department><span>Département du manager</span>

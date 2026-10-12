@@ -7,26 +7,32 @@ use App\Modules\Platform\Services\Departments;
 
 /**
  * Authentification et rôles.
- *   admin   : tout, y compris utilisateurs et pointeuses
- *   rh      : employés, départements, groupes, horaires, corrections, statuts des agents
+ *   admin   : tout (seul rôle qui modifie fiches, départements, groupes, horaires, corrections…)
+ *   rh      : tableau de bord, Agents (disponibilité uniquement), Employés en consultation
  *   ceo     : consultation de tous les départements, aucune modification
  *   manager : page Agents, tableau de bord et présence du jour de son département uniquement
  *   lecteur : consultation uniquement
  *
  * Droits (« abilities ») vérifiés par le routeur sur chaque route :
- *   board  : page Agents, tableau de bord, présence du jour, /api/direct, profil
- *   view   : toutes les pages de consultation
- *   manage : modifications courantes (RH)
- *   admin  : comptes, pointeuses, journal
+ *   board    : page Agents, tableau de bord, /api/*, profil
+ *   presence : présence du jour
+ *   staff    : liste et fiche des employés
+ *   view     : autres pages de consultation (corrections, accès, horaires, groupes, pointeuses…)
+ *   status   : disponibilité des agents (statut de travail)
+ *   manage   : toutes les autres modifications
+ *   admin    : comptes, pointeuses, journal
  * Les données d'un manager sont en plus filtrées par departmentScope().
  */
 final class Auth
 {
     private const ABILITIES = [
-        'board'  => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
-        'view'   => ['admin', 'rh', 'ceo', 'lecteur'],
-        'manage' => ['admin', 'rh'],
-        'admin'  => ['admin'],
+        'board'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
+        'presence' => ['admin', 'ceo', 'manager', 'lecteur'],
+        'staff'    => ['admin', 'rh', 'ceo', 'lecteur'],
+        'view'     => ['admin', 'ceo', 'lecteur'],
+        'status'   => ['admin', 'rh'],
+        'manage'   => ['admin'],
+        'admin'    => ['admin'],
     ];
 
     public const ROLES = [
@@ -95,8 +101,15 @@ final class Auth
         return in_array(self::role(), ['manager', 'ceo'], true) ? '/agents' : '/';
     }
 
+    /** Identifiant insensible à la casse : toujours enregistré et comparé en minuscules. */
+    public static function normalizeUsername(string $username): string
+    {
+        return mb_strtolower(trim($username));
+    }
+
     public static function isThrottled(string $username, string $ip): bool
     {
+        $username = self::normalizeUsername($username);
         $window = (int) Config::get('login_window_minutes', 15);
         $failures = (int) Database::value(
             'SELECT COUNT(*) FROM login_attempts WHERE username = ? AND ip = ? AND success = 0
@@ -109,6 +122,7 @@ final class Auth
     public static function attempt(string $username, string $password): bool
     {
         $ip = client_ip();
+        $username = self::normalizeUsername($username);
         $user = Database::one('SELECT id, password_hash, active FROM users WHERE username = ?', [$username]);
         $ok = $user !== null && (int) $user['active'] === 1 && password_verify($password, $user['password_hash']);
 

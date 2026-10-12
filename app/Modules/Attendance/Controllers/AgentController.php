@@ -16,7 +16,8 @@ use App\Modules\Platform\Services\Departments;
  * Page « Agents » : une carte par agent (photo, titre, contacts, statut de
  * travail, heure d'arrivée du jour), filtrable par département.
  * Managers : leur département seulement (Auth::departmentScope()).
- * Modification de la fiche, de la photo et du statut : droit « manage ».
+ * Modification de la fiche et de la photo : droit « manage » (administrateur) ;
+ * disponibilité (statut de travail) : droit « status » (administrateur et RH).
  */
 final class AgentController extends Controller
 {
@@ -173,7 +174,7 @@ final class AgentController extends Controller
         $this->redirect($back);
     }
 
-    /** Statut de travail saisi par les RH (vide = retour à l'automatique). */
+    /** Disponibilité (statut de travail) saisie par les RH ou l'administrateur (vide = retour à l'automatique). */
     public function status(int $id): void
     {
         $emp = Database::one('SELECT id, name FROM employees WHERE id = ?', [$id]) ?? $this->notFound();

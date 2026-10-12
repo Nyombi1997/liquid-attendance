@@ -19,7 +19,7 @@ final class UserController extends Controller
 
     public function store(): void
     {
-        $username = (string) $this->input('username', '');
+        $username = Auth::normalizeUsername((string) $this->input('username', ''));
         $fullName = (string) $this->input('full_name', '');
         $role = (string) $this->input('role', 'lecteur');
         $department = $this->department($role);

@@ -7,7 +7,7 @@
 </div>
 
 <form class="filters card" method="get" action="/employes">
-  <label class="field field-grow"><span>Recherche</span><input type="search" name="q" value="<?= e($q) ?>" placeholder="Nom, matricule ou numéro de pointeuse"></label>
+  <label class="field field-grow"><span>Recherche</span><input type="search" name="q" value="<?= e($q) ?>" placeholder="Nom, matricule ou numéro de pointeuse" data-suggest="go"></label>
   <label class="field"><span>Groupe</span>
     <select name="group"><option value="">Tous</option><option value="aucun" <?= $group === 'aucun' ? 'selected' : '' ?>>Sans groupe</option>
       <?php foreach ($groups as $g): ?><option value="<?= (int) $g['id'] ?>" <?= (string) $group === (string) $g['id'] ? 'selected' : '' ?>><?= e($g['name']) ?></option><?php endforeach; ?>

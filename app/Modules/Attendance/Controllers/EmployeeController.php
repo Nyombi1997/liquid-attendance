@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Modules\Attendance\Controllers;
 
 use App\Core\Audit;
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Modules\Attendance\Services\AttendanceComputer;
@@ -52,6 +53,49 @@ final class EmployeeController extends Controller
             'group'     => $group,
             'state'     => $state,
         ]);
+    }
+
+    /**
+     * Propositions des barres de recherche : GET /api/suggestions?q=…
+     * Agents actifs dont le nom, le titre, le matricule ou le n° de pointeuse
+     * correspond, dans le périmètre de l'utilisateur (managers : leur département).
+     * Lien de chaque proposition : fiche employé, ou page Agents sans droit « staff ».
+     */
+    public function suggest(): void
+    {
+        session_write_close();
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+
+        $q = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 60);
+        if ($q === '') {
+            echo json_encode(['items' => []]);
+            return;
+        }
+        $like = '%' . addcslashes($q, '%_\\') . '%';
+        $rows = Database::all(
+            'SELECT e.id, e.name, e.job_title, e.device_user_id, e.matricule, e.department_id, e.photo_updated_at
+               FROM employees e
+              WHERE e.active = 1
+                AND (e.name LIKE ? OR e.device_name LIKE ? OR e.job_title LIKE ? OR e.matricule LIKE ? OR e.device_user_id = ?)'
+                . Departments::sql(Auth::departmentScope()) . '
+              ORDER BY e.name LIKE ? DESC, e.name
+              LIMIT 8',
+            [$like, $like, $like, $like, $q, addcslashes($q, '%_\\') . '%']
+        );
+
+        $staff = Auth::can('staff');
+        $items = array_map(static function (array $r) use ($staff): array {
+            $dep = $r['department_id'] !== null ? (Departments::all()[(int) $r['department_id']]['name'] ?? null) : null;
+            return [
+                'id'     => (int) $r['id'],
+                'name'   => $r['name'],
+                'detail' => implode(' · ', array_filter([$r['job_title'], $dep, 'n° ' . $r['device_user_id']])),
+                'photo'  => photo_url($r),
+                'url'    => $staff ? '/employes/' . (int) $r['id'] : '/agents?q=' . rawurlencode($r['name']),
+            ];
+        }, $rows);
+        echo json_encode(['items' => $items], JSON_UNESCAPED_UNICODE);
     }
 
     public function show(int $id): void

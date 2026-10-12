@@ -14,47 +14,44 @@ $active = static function (string ...$prefixes) use ($path): string {
     }
     return '';
 };
-// Menu selon le rôle : la direction et les managers commencent par la page Agents
-$agents = ['/agents', 'id-card', 'Agents', ['/agents']];
+// Menu selon le rôle : chaque entrée n'apparaît qu'avec le droit de sa route.
+// La direction et les managers commencent par la page Agents.
+$agents = ['/agents', 'id-card', 'Agents', ['/agents'], 'board'];
 $presence = [
-    ['/', 'dashboard', 'Tableau de bord', ['/']],
-    ['/presence', 'calendar', 'Présence du jour', ['/presence']],
+    ['/', 'dashboard', 'Tableau de bord', ['/'], 'board'],
+    ['/presence', 'calendar', 'Présence du jour', ['/presence'], 'presence'],
 ];
-if (!can('view')) {
+$nav = [
     // Manager : son département uniquement
-    $nav = ['Mon département' => array_merge([$agents], $presence)];
-} else {
-    $nav = [
-        'Présence' => array_merge(
-            Auth::home() === '/agents' ? [$agents] : [],
-            $presence,
-            Auth::home() === '/agents' ? [] : [$agents],
-            [
-                ['/corrections', 'alert', 'Sorties manquantes', ['/corrections']],
-                ['/acces', 'door', 'Accès aux salles', ['/acces']],
-                ['/horaires', 'clock', 'Horaires', ['/horaires']],
-            ]
-        ),
-        'Personnel' => [
-            ['/employes', 'users', 'Employés', ['/employes']],
-            ['/groupes', 'layers', 'Groupes', ['/groupes']],
-        ],
-        'Modules' => [
-            ['/flotte', 'car', 'Parc automobile', ['/flotte']],
-            ['/conges', 'sun', 'Congés', ['/conges']],
-        ],
-        'Administration' => [
-            ['/pointeuses', 'fingerprint', 'Pointeuses', ['/pointeuses']],
-        ],
-    ];
-    if (can('manage')) {
-        array_splice($nav['Personnel'], 1, 0, [['/departements', 'sitemap', 'Départements', ['/departements']]]);
-    }
-    if (can('admin')) {
-        $nav['Administration'][] = ['/utilisateurs', 'shield', 'Utilisateurs', ['/utilisateurs']];
-        $nav['Administration'][] = ['/journal', 'list', 'Journal d\'activité', ['/journal']];
-    }
+    (can('view') || can('staff') ? 'Présence' : 'Mon département') => array_merge(
+        Auth::home() === '/agents' ? [$agents] : [],
+        $presence,
+        Auth::home() === '/agents' ? [] : [$agents],
+        [
+            ['/corrections', 'alert', 'Sorties manquantes', ['/corrections'], 'view'],
+            ['/acces', 'door', 'Accès aux salles', ['/acces'], 'view'],
+            ['/horaires', 'clock', 'Horaires', ['/horaires'], 'view'],
+        ]
+    ),
+    'Personnel' => [
+        ['/employes', 'users', 'Employés', ['/employes'], 'staff'],
+        ['/departements', 'sitemap', 'Départements', ['/departements'], 'manage'],
+        ['/groupes', 'layers', 'Groupes', ['/groupes'], 'view'],
+    ],
+    'Modules' => [
+        ['/flotte', 'car', 'Parc automobile', ['/flotte'], 'view'],
+        ['/conges', 'sun', 'Congés', ['/conges'], 'view'],
+    ],
+    'Administration' => [
+        ['/pointeuses', 'fingerprint', 'Pointeuses', ['/pointeuses'], 'view'],
+        ['/utilisateurs', 'shield', 'Utilisateurs', ['/utilisateurs'], 'admin'],
+        ['/journal', 'list', 'Journal d\'activité', ['/journal'], 'admin'],
+    ],
+];
+foreach ($nav as $section => $items) {
+    $nav[$section] = array_filter($items, static fn(array $item) => can($item[4]));
 }
+$nav = array_filter($nav);
 ?><!doctype html>
 <html lang="fr">
 <head>
@@ -93,9 +90,9 @@ if (!can('view')) {
   <div class="main">
     <header class="topbar">
       <button class="menu-toggle" type="button" data-toggle-sidebar aria-label="Menu"><?= icon('menu') ?></button>
-      <form class="search" action="<?= can('view') ? '/employes' : '/agents' ?>" method="get" role="search">
+      <form class="search" action="<?= can('staff') ? '/employes' : '/agents' ?>" method="get" role="search">
         <?= icon('search') ?>
-        <input type="search" name="q" placeholder="Rechercher un <?= can('view') ? 'employé' : 'agent' ?>…" aria-label="Rechercher">
+        <input type="search" name="q" placeholder="Rechercher un <?= can('staff') ? 'employé' : 'agent' ?>…" aria-label="Rechercher" autocomplete="off" data-suggest="go">
       </form>
       <div class="topbar-right">
         <span class="live-status" data-live-status hidden role="status" aria-live="polite">

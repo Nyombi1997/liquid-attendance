@@ -7,6 +7,7 @@
   <title><?= e($title ?? 'Connexion') ?> · <?= e(Config::get('app_name')) ?></title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="<?= e(asset('img/icon-192.png')) ?>">
+  <link rel="stylesheet" href="<?= e(asset('vendor/fontawesome/css/all.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
   <script src="<?= e(asset('js/app.js')) ?>" defer></script>
 </head>

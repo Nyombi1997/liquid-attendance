@@ -29,17 +29,20 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
 - **Page Agents** (`/agents`) : une carte par agent avec photo, titre, e-mail et téléphone (copiables d'un clic), département, groupe, **heure d'arrivée du jour** (vert : à l'heure, orange : en retard, rouge : pas arrivé) et **statut de travail** en haut à droite (au bureau, télétravail, mission, congé). Filtres par département (arbre à gauche), par état (à l'heure, en retard, pas arrivés…) et recherche instantanée. Mise à jour en direct.
-- **Fiche agent depuis la carte** (Admin, RH) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG).
-- **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH peuvent saisir télétravail, mission, congé ou bureau jusqu'à une date, puis revenir à l'automatique. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin.
+- **Fiche agent depuis la carte** (Administrateur) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG).
+- **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH et l'administrateur peuvent saisir la disponibilité (télétravail, mission, congé ou bureau) jusqu'à une date, puis revenir à l'automatique ; c'est la seule modification ouverte aux RH. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin.
 - **Départements** (`/departements`) : arborescence (un département peut avoir des sous-départements), affectation des agents depuis la carte, la fiche employé ou en lot depuis la liste des employés.
+- **Recherche avec propositions** : dans toutes les barres de recherche, les agents correspondants s'affichent dès la première lettre (nom, titre, matricule ou n° de pointeuse) ; un clic (ou flèches + Entrée) ouvre la fiche ou applique le filtre. Propositions limitées au périmètre de l'utilisateur (`/api/suggestions`).
+- **Mots de passe** : bouton « œil » sur chaque champ pour afficher ou masquer la saisie.
+- **Identifiants insensibles à la casse** : `Admin`, `ADMIN` et `admin` désignent le même compte (enregistré en minuscules).
 - **Export CSV** (compatible Excel), **journal d'activité**, rôles ci-dessous.
 
 ### Rôles
 
 | Rôle | Accès | Page d'accueil |
 |---|---|---|
-| Administrateur | Tout : comptes, pointeuses, journal, et tout ce que font les RH | Tableau de bord |
-| Ressources humaines | Agents (fiche, photo, statut), départements, groupes, horaires, corrections ; tous les départements | Tableau de bord |
+| Administrateur | Tout, et **seul rôle qui modifie** : fiches et photos des agents, employés, départements, groupes, horaires, corrections, comptes, pointeuses | Tableau de bord |
+| Ressources humaines | Tableau de bord, Agents (**mise à jour de la disponibilité uniquement**), Employés (consultation) ; tous les départements | Tableau de bord |
 | Direction (CEO) | Toutes les pages de consultation, tous les départements, **aucune modification** | Agents |
 | Manager de département | Page Agents, tableau de bord et présence **du jour** de son département et de ses sous-départements uniquement | Agents |
 | Lecteur | Consultation et export, sans modification | Tableau de bord |
@@ -170,6 +173,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 ```bash
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/002_agents.sql
+sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/003_identifiants.sql
 ```
 
 Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
@@ -178,6 +182,7 @@ Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`,
 |---|---|
 | `001_live.sql` | Mode direct : `devices.last_event_at` (dernier badge reçu), `devices.live_since` (écoute en direct active), index sur `attendance_days.computed_at` |
 | `002_agents.sql` | Page Agents : table `departments`, rôles `ceo` et `manager` + `users.department_id`, colonnes `employees.job_title`, `department_id`, `photo_updated_at`, `work_status*` |
+| `003_identifiants.sql` | Identifiants insensibles à la casse : comptes existants passés en minuscules, collation `utf8mb4_unicode_ci` sur `users.username` |
 
 Les photos des agents sont enregistrées dans `./data/storage/photos` (volume monté dans le conteneur `app`, hors du dossier public) : elles sont conservées lors des mises à jour et incluses dans la sauvegarde de `./data`.
 

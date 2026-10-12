@@ -1,6 +1,6 @@
 # Cadrage — Plateforme interne (Attendance, Fleet, Leave)
 
-Mis à jour le 9 octobre 2026 · @Beni
+Mis à jour le 12 octobre 2026 · @Beni
 
 ## Comment utiliser ce document
 
@@ -16,6 +16,7 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Base du projet `Nyombi1997/liquid-attendance` | **Fait** : Docker, MVC, base, synchronisation, module Présence complet |
 | Pointages en temps réel, remise à l'heure nocturne | **Fait** le 9 oct. 2026, testé avec un faux module `zk` |
 | Plateforme « en direct » (badge visible en moins de 10 s sans recharger : API `/api/direct`, notifications, indicateur « En direct ») | **Fait** le 9 oct. 2026, testé en local (faux `zk`, MariaDB, Chrome) ; **à valider sur la VM** avec les vraies pointeuses (migration `001_live.sql` à appliquer avant la reconstruction) |
+| Droits des RH réduits, recherche avec propositions, affichage des mots de passe, identifiants insensibles à la casse | **Fait** le 12 oct. 2026, testé en local ; migration `003_identifiants.sql` à appliquer sur la VM |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
@@ -135,7 +136,8 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 - **Horaires** : saisis manuellement. Attribuables à tout le monde (horaire par défaut), à un groupe ou à un ou plusieurs agents, sur une période. Priorité agent > groupe > défaut. Horaires de nuit gérés.
 - Paramètres d'un horaire : début, fin, jours travaillés, pause déduite, tolérance de retard, seuil des heures supplémentaires.
 - **NOC et IT Room** : accès salle, historique séparé, non comptés dans la présence.
-- **Rôles** : Administrateur (tout), RH (employés, groupes, horaires, corrections), Lecteur (consultation et export).
+- **Rôles** (révisés le 12 oct. 2026) : Administrateur (tout, seul à modifier fiches, employés, départements, groupes, horaires, corrections), RH (tableau de bord, Agents avec mise à jour de la disponibilité uniquement, Employés en consultation), Direction/CEO (tout voir, rien modifier), Manager (son département), Lecteur (consultation et export).
+- **Identifiants** : insensibles à la casse, enregistrés en minuscules (le mot de passe, lui, reste sensible à la casse).
 - Horaire par défaut provisoire : 08:00–17:00, lundi–vendredi, pause 60 min, tolérance 15 min, heures sup au-delà de 30 min. **À ajuster.**
 
 ## Design

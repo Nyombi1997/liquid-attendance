@@ -20,7 +20,7 @@ CREATE TABLE departments (
 
 CREATE TABLE users (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  username      VARCHAR(60)  NOT NULL UNIQUE,
+  username      VARCHAR(60)  COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE COMMENT 'en minuscules, comparé sans tenir compte de la casse',
   full_name     VARCHAR(120) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role          ENUM('admin','rh','ceo','manager','lecteur') NOT NULL DEFAULT 'lecteur',

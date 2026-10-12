@@ -3,7 +3,8 @@ use App\Modules\Attendance\Services\AgentStatus;
 
 /** @var array $agents */
 /** @var array $tree */
-$manage = can('manage');
+$manage = can('manage');   // fiche, photo, département : administrateur
+$editStatus = can('status'); // disponibilité : administrateur et RH
 $q = mb_substr((string) ($_GET['q'] ?? ''), 0, 60);
 $back = '/agents' . ($dep !== '' ? '?dep=' . rawurlencode($dep) : '');
 
@@ -72,7 +73,7 @@ foreach ($tree['nodes'] as $n) {
       </div>
       <label class="agents-search">
         <?= fa('fa-solid fa-magnifying-glass') ?>
-        <input type="search" value="<?= e($q) ?>" placeholder="Nom, titre, e-mail ou téléphone" aria-label="Rechercher un agent" data-agent-search>
+        <input type="search" value="<?= e($q) ?>" placeholder="Nom, titre, e-mail ou téléphone" aria-label="Rechercher un agent" data-agent-search data-suggest="filter">
       </label>
     </div>
 
@@ -93,7 +94,7 @@ foreach ($tree['nodes'] as $n) {
       <article class="agent-card" data-agent="<?= (int) $a['id'] ?>" data-employee-id="<?= (int) $a['id'] ?>"
                data-search="<?= e($search) ?>" data-filters="<?= e(implode(' ', $a['filters'])) ?>"
                data-manual-status="<?= $w['manual'] ? e($a['work_status']) : '' ?>"
-               <?php if ($manage): ?>data-agent-json="<?= e(json_encode($json, JSON_UNESCAPED_UNICODE)) ?>"<?php endif; ?>>
+               <?php if ($manage || $editStatus): ?>data-agent-json="<?= e(json_encode($json, JSON_UNESCAPED_UNICODE)) ?>"<?php endif; ?>>
         <div class="agent-photo">
           <?php if ($photo): ?>
             <img src="<?= e($photo) ?>" alt="Photo de <?= e($a['name']) ?>" loading="lazy" width="112" height="112">
@@ -107,7 +108,7 @@ foreach ($tree['nodes'] as $n) {
         <div class="agent-body">
           <div class="agent-head">
             <h2 class="agent-name"><?= e($a['name']) ?></h2>
-            <?php if ($manage): ?>
+            <?php if ($editStatus): ?>
               <button type="button" class="agent-status status-<?= e($w['variant']) ?>" data-agent-status data-agent-edit="status" title="<?= e($w['title']) ?> · cliquer pour modifier" aria-label="<?= e($w['label']) ?>, modifier le statut"><?= fa($w['icon']) ?></button>
             <?php else: ?>
               <span class="agent-status status-<?= e($w['variant']) ?>" data-agent-status title="<?= e($w['title']) ?>" role="img" aria-label="<?= e($w['label']) ?>"><?= fa($w['icon']) ?></span>
@@ -137,6 +138,8 @@ foreach ($tree['nodes'] as $n) {
         </div>
         <?php if ($manage): ?>
           <button type="button" class="agent-edit" data-agent-edit="profile" aria-label="Modifier la fiche de <?= e($a['name']) ?>" title="Modifier"><?= fa('fa-solid fa-pen') ?></button>
+        <?php elseif ($editStatus): ?>
+          <button type="button" class="agent-edit" data-agent-edit="status" aria-label="Modifier la disponibilité de <?= e($a['name']) ?>" title="Modifier la disponibilité"><?= fa('fa-solid fa-pen') ?></button>
         <?php endif; ?>
       </article>
       <?php endforeach; ?>
@@ -189,12 +192,14 @@ foreach ($tree['nodes'] as $n) {
     </div>
   </form>
 </dialog>
+<?php endif; ?>
 
+<?php if ($editStatus): ?>
 <dialog id="status-dialog" class="dialog" data-status-dialog>
   <form method="post" class="stack" data-status-form data-action="/agents/{id}/statut">
     <?= csrf_field() ?>
     <input type="hidden" name="_back" value="<?= e($back) ?>">
-    <h2>Statut de <span data-status-name></span></h2>
+    <h2>Disponibilité de <span data-status-name></span></h2>
     <p class="muted small">« Au bureau » s'affiche automatiquement au premier badge d'entrée. Un statut saisi ici le remplace jusqu'à la date de fin.</p>
     <div class="status-options">
       <label class="status-option"><input type="radio" name="work_status" value=""><span><?= fa('fa-solid fa-wand-magic-sparkles') ?> Automatique <small>au bureau dès le badge</small></span></label>

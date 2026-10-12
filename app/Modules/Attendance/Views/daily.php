@@ -44,7 +44,7 @@ $shift = fn(int $days) => url('/presence', array_merge($query, [
     <select name="status"><option value="">Tous (hors repos)</option>
       <?php foreach ($statuses as $k => $l): ?><option value="<?= $k ?>" <?= $filters['status'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
     </select></label>
-  <label class="field field-grow"><span>Employé</span><input type="search" name="q" value="<?= e($filters['q']) ?>" placeholder="Nom, matricule ou numéro"></label>
+  <label class="field field-grow"><span>Employé</span><input type="search" name="q" value="<?= e($filters['q']) ?>" placeholder="Nom, matricule ou numéro" data-suggest="submit"></label>
   <button class="btn btn-primary" type="submit"><?= icon('filter') ?> Filtrer</button>
 </form>
 

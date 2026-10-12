@@ -91,12 +91,17 @@ tests/                       DayCalculatorTest.php ; test_sync.py + faux module 
 | Droit | Rôles | Exemples de routes |
 |---|---|---|
 | `null` | public | `/connexion` |
-| `board` | admin, rh, ceo, manager, lecteur | `/`, `/presence`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/profil` |
-| `view` | admin, rh, ceo, lecteur | `/employes`, `/groupes`, `/corrections`, `/acces`, `/horaires`, `/pointeuses`, `/presence/export`, `/flotte`, `/conges` |
-| `manage` | admin, rh | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/agents/{id}/statut`, `/departements` |
+| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/suggestions`, `/profil` |
+| `presence` | admin, ceo, manager, lecteur | `/presence` |
+| `staff` | admin, rh, ceo, lecteur | `/employes`, `/employes/{id}` (consultation) |
+| `view` | admin, ceo, lecteur | `/groupes`, `/corrections`, `/acces`, `/horaires`, `/pointeuses`, `/presence/export`, `/flotte`, `/conges` |
+| `status` | admin, rh | POST `/agents/{id}/statut` (disponibilité) |
+| `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
 | `admin` | admin | `/utilisateurs`, `/journal`, POST `/pointeuses` |
 
-- `ceo` : tout voir, ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements, présence du jour seulement.
+- `ceo` : tout voir, ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements, présence du jour seulement. `rh` : tableau de bord, Agents (disponibilité seulement), Employés en lecture.
+- Identifiants insensibles à la casse : `Auth::normalizeUsername()` (minuscules) à l'enregistrement et à la connexion.
+- `app.js` ajoute un bouton « œil » à tout champ mot de passe ; `data-suggest="go|submit|filter"` sur un champ de recherche affiche les propositions (`/api/suggestions`).
 - Périmètre : `Departments::sql(Auth::departmentScope())` dans toute requête accessible à un manager (pages, photos, `/api/direct`).
 - Accueil : `Auth::home()` → `/agents` (ceo, manager) ou `/`.
 
@@ -158,7 +163,7 @@ tests/                       DayCalculatorTest.php ; test_sync.py + faux module 
 
 Commande de migration (sur la VM, depuis ~/liquid-attendance) :
 `sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/NNN_nom.sql`
-Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents). Toutes rejouables sans risque.
+Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse). Toutes rejouables sans risque.
 
 # 8. État et questions ouvertes
 
@@ -166,6 +171,7 @@ D'après docs/CADRAGE.md (état au 9 oct. 2026) :
 - Fait : accès VM → pointeuses (VLAN 3602), base du projet et module Présence, temps réel et remise à l'heure nocturne, mode direct (`/api/direct`, à valider sur la VM avec les vraies pointeuses).
 - À faire : déploiement sur la VM, réservation DHCP de la VM, NAT 8443/80 + certificat Let's Encrypt, sécurisation de Kibana.
 - Ajouté depuis : page Agents, départements, rôles CEO et Manager (migration `002_agents.sql`).
+- 12 oct. 2026 : RH limités (tableau de bord, Agents en disponibilité seule, Employés en lecture), propositions dans les recherches, bouton « œil » des mots de passe, identifiants insensibles à la casse (migration `003_identifiants.sql`).
 - Questions ouvertes : horaires réels et groupes à saisir ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

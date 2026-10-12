@@ -10,7 +10,8 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Database;
 
-$username = $argv[1] ?? null;
+// Identifiant insensible à la casse : enregistré en minuscules (comme Auth::normalizeUsername)
+$username = isset($argv[1]) ? mb_strtolower(trim($argv[1])) : null;
 $fullName = $argv[2] ?? 'Administrateur';
 if (!$username || !preg_match('/^[a-zA-Z0-9._-]{3,60}$/', $username)) {
     fwrite(STDERR, "Usage : php bin/create-admin.php <identifiant> [\"Nom complet\"]\n");
