@@ -57,7 +57,8 @@ $donut = static function (array $a, array $b, string $label): string {
   <section class="card">
     <div class="card-head">
       <h2>Répartition du jour</h2>
-      <?php if ($daily): ?><a class="link" href="/presence?status=venus">Voir les présents</a><?php endif; ?>
+      <?php if ($daily): ?><a class="btn btn-outline btn-sm" href="/presence"><?= fa('fa-solid fa-chart-pie') ?> Voir le rapport détaillé</a>
+      <?php elseif (can('calendar')): ?><a class="btn btn-outline btn-sm" href="/calendrier"><?= fa('fa-solid fa-chart-pie') ?> Voir le rapport détaillé</a><?php endif; ?>
     </div>
     <div class="donuts">
       <figure class="donut-block">
@@ -96,14 +97,14 @@ $donut = static function (array $a, array $b, string $label): string {
 
 <div class="<?= $devices ? 'grid-2' : '' ?>">
   <section class="card">
-    <div class="card-head"><h2>Derniers pointages</h2><?php if ($full): ?><a class="link" href="/acces">Accès aux salles</a><?php endif; ?></div>
+    <div class="card-head"><h2>Derniers pointages</h2><a class="link" href="/pointages">Tous les pointages</a></div>
     <ul class="list" data-punches>
       <?php foreach ($punches as $p): ?>
-        <li class="list-item" data-punched-at="<?= e($p['punched_at']) ?>" data-punch-id="<?= (int) $p['id'] ?>">
+        <li data-punched-at="<?= e($p['punched_at']) ?>" data-punch-id="<?= (int) $p['id'] ?>"><<?= $p['employee_id'] ? 'a href="/employes/' . (int) $p['employee_id'] . '"' : 'div' ?> class="list-item">
           <span class="dir dir-<?= e($p['usage_type'] === 'acces' ? 'acces' : $p['direction']) ?>"><?= icon($p['usage_type'] === 'acces' ? 'door' : ($p['direction'] === 'entree' ? 'arrow-in' : 'arrow-out')) ?></span>
           <span class="list-main"><strong><?= e($p['employee']) ?></strong><small><?= e($p['device']) ?></small></span>
           <span class="time"><?= e(date('d/m H:i', strtotime($p['punched_at']))) ?></span>
-        </li>
+        </<?= $p['employee_id'] ? 'a' : 'div' ?>></li>
       <?php endforeach; ?>
       <?php if (!$punches): ?><li class="muted empty-line" data-punches-empty>Aucun pointage importé pour l'instant.</li><?php endif; ?>
     </ul>

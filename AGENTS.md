@@ -23,7 +23,7 @@ storage/                     fichiers déposés (photos) ; en production volume 
 ### Rôles, droits et périmètre
 - Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`. Libellés dans `Auth::ROLES`.
 - Droits vérifiés par le routeur (3e argument de `$r->get/post`) :
-  - `board` : page Agents, tableau de bord, `/api/direct`, `/api/notifications`, `/api/suggestions`, profil — **tous les rôles** ;
+  - `board` : page Agents, tableau de bord, pointages (`/pointages`), `/api/direct`, `/api/notifications`, `/api/suggestions`, profil — **tous les rôles** ;
   - `presence` : présence du jour — tous sauf `rh` ;
   - `staff` : liste et fiche des employés (consultation) — **tous les rôles** (manager : son département) ;
   - `calendar` : calendrier de présence — `admin`, `rh`, `manager` ;

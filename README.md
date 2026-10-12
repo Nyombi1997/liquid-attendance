@@ -25,6 +25,8 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Calcule chaque journée** : arrivée, départ, temps de présence, retard, départ anticipé, heures supplémentaires.
 - **Horaires saisis manuellement**, attribuables à tout le monde, à un groupe ou à un ou plusieurs agents, sur une période. Priorité : agent > groupe > horaire par défaut. Les horaires de nuit (qui passent minuit) sont gérés.
 - **Sorties manquantes** : une journée sans badge de sortie est marquée « sortie manquante » et ne compte aucune heure tant qu'un admin ou les RH n'ont pas saisi l'heure de sortie. La correction est tracée (qui, quand, motif) et peut être annulée.
+- **Pointages** (`/pointages`, tous les rôles) : tous les badges d'une journée (entrées, sorties, accès aux salles), filtrables par type, pointeuse et agent ; un clic sur l'agent ouvre sa fiche. Manager : son département ; RH et managers : aujourd'hui seulement. Les « Derniers pointages » du tableau de bord y mènent et chaque ligne ouvre la fiche de l'agent.
+- **Rapport détaillé** : bouton de la carte « Répartition du jour » du tableau de bord, vers la Présence du jour (Calendrier pour les RH).
 - **Accès aux salles** (NOC, IT Room) : historique des entrées, séparé du calcul de présence.
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
@@ -90,7 +92,7 @@ Sur les pages **Tableau de bord**, **Présence** (journée d'aujourd'hui), **Age
 - l'indicateur « En direct · à jour il y a X s » de la barre du haut passe en gris « Hors ligne » si les appels échouent deux fois de suite (nouvel essai après 2 s, 10 s, 30 s puis 60 s). Un échec pendant que la page est cachée (téléphone verrouillé) n'affiche rien ; au retour sur la page (déverrouillage, onglet visible, réseau revenu), la requête restée bloquée est abandonnée et le direct repart aussitôt. Si la session a expiré, retour à la page de connexion.
 - si une page est demandée sans réseau, le service worker réessaie deux fois avant d'afficher la page hors ligne, qui se recharge d'elle-même dès le retour du réseau (`public/assets/js/offline.js`).
 
-L'application reste toujours en **thème clair** (`color-scheme: only light`) : le mode sombre automatique du téléphone ne l'assombrit plus.
+L'application reste toujours en **thème clair**, même quand le téléphone est en mode sombre. Les navigateurs mobiles (Chrome « assombrir les sites », Samsung Internet…) n'assombrissent de force que les pages qui ne gèrent pas le mode sombre et ignorent souvent `only light` : la racine annonce donc `color-scheme: light dark` (balise meta et `:root`), et `body` est rendu en `only light` avec un fond explicite sur `html`.
 
 `/api/direct` (droit « consultation ») renvoie du JSON, jamais mis en cache : nouveaux pointages depuis `since_punch` (30 au plus), journées du jour modifiées depuis `since_day`, indicateurs (les mêmes que le tableau de bord, service `DashboardStats`), retards du jour et état des pointeuses. Il libère le verrou de session dès l'utilisateur vérifié, pour ne pas bloquer les autres onglets, et répond en quelques millisecondes (index sur `punches.id` et `attendance_days.computed_at`). `computed_at` ne change que si le résultat d'une journée change : le calcul global des 5 minutes ne renvoie donc pas toutes les lignes aux pages ouvertes.
 

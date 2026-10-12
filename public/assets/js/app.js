@@ -879,14 +879,18 @@
 
     const punchItem = (p) => {
       const kind = p.usage_type === 'acces' ? 'acces' : p.direction;
-      const li = el('li', 'list-item');
+      // Clic sur l'agent : ouvre sa fiche
+      const li = el('li');
       li.dataset.punchedAt = p.punched_at;
       li.dataset.punchId = p.id;
+      const item = el(p.employee.id ? 'a' : 'div', 'list-item');
+      if (p.employee.id) item.href = `/employes/${p.employee.id}`;
       const dir = el('span', `dir dir-${kind}`);
       dir.appendChild(icon(kind === 'acces' ? 'door' : (kind === 'entree' ? 'arrow-in' : 'arrow-out')));
       const main = el('span', 'list-main');
       main.append(el('strong', '', p.employee.name), el('small', '', p.device.name));
-      li.append(dir, main, el('span', 'time', p.time));
+      item.append(dir, main, el('span', 'time', p.time));
+      li.appendChild(item);
       return li;
     };
     const addPunches = (list) => {

@@ -91,7 +91,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 | Droit | Rôles | Exemples de routes |
 |---|---|---|
 | `null` | public | `/connexion` |
-| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/notifications`, `/api/suggestions`, `/profil` |
+| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/notifications`, `/api/suggestions`, `/pointages`, `/profil` |
 | `presence` | admin, ceo, manager, lecteur | `/presence` |
 | `staff` | admin, rh, ceo, manager, lecteur | `/employes`, `/employes/{id}` (consultation ; manager : son département) |
 | `calendar` | admin, rh, manager | `/calendrier` |
@@ -129,7 +129,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 
 **Worker** (`worker/sync.py`) : un thread par pointeuse active, connexion permanente ; synchro complète au démarrage puis toutes les `FULL_SYNC_INTERVAL` s (1800) ; badges en direct (`live_capture`) insérés dans `punches` ; recalcul de l'agent via `php bin/compute.php --employee-device-id=…` (au plus toutes les 5 s) ; calcul global des `COMPUTE_DAYS` (7) derniers jours toutes les `SYNC_INTERVAL` s (300) ; reconnexion 10 s → 30 s → 60 s → 5 min ; remise à l'heure des horloges à `CLOCK_SET_AT` (03:00), seule écriture sur les appareils.
 
-**Mode direct** : les pages `data-live` (tableau de bord, présence du jour, agents, pointeuses) appellent `GET /api/direct` toutes les 5 s (60 s onglet caché) ; reprise immédiate au retour sur la page (`resume()` dans `startLive()`), requêtes coupées après 15 s. Thème clair uniquement (`color-scheme: only light`).
+**Mode direct** : les pages `data-live` (tableau de bord, présence du jour, agents, pointeuses) appellent `GET /api/direct` toutes les 5 s (60 s onglet caché) ; reprise immédiate au retour sur la page (`resume()` dans `startLive()`), requêtes coupées après 15 s. Thème clair uniquement : racine en `color-scheme: light dark` (meta + `:root`, empêche l'assombrissement forcé des navigateurs mobiles), `body` en `only light` ; ne pas remettre `only light` sur la racine.
 
 **Ajouter un module (Fleet, Leave)** :
 1. Dossier `app/Modules/<Module>/{Controllers,Services,Views}` (namespace `App\Modules\<Module>\…`, vues `'<Module>:nom'`).
@@ -179,6 +179,7 @@ D'après docs/CADRAGE.md (état au 9 oct. 2026) :
 - 12 oct. 2026 (suite) : Calendrier (`/calendrier`, migration `004_calendrier.sql`), cloche des notifications, Employés ouverts aux managers (leur département), photo cliquable vers la fiche, photo modifiable dans « Modifier l'employé », menus RH/manager réduits (pas de sorties manquantes ni de modules).
 - 12 oct. 2026 (fin) : désactivation d'un agent depuis la page Agents, temps « en cours » maintenu après un retour (entrée après sortie), bouton « Aujourd'hui » du calendrier vers la vue jour, bordures colorées d'un seul côté retirées du style.
 - 12 oct. 2026 (soir) : tableau de bord en camemberts (présents/absents, à l'heure/en retard, en %), filtres appliqués sans bouton, filtre « Présents (même sortis) » (Présence `status=venus`, Calendrier `presence=venus`), heures « 00h…23h » du calendrier, reprise du direct au déverrouillage du téléphone (page hors ligne qui se recharge seule), thème clair forcé.
+- 12 oct. 2026 (nuit) : page Pointages (`/pointages`, droit `board`, périmètre manager, aujourd'hui seulement pour RH/managers) au lieu du lien « Accès aux salles » du tableau de bord, derniers pointages cliquables vers la fiche de l'agent, bouton « Voir le rapport détaillé », correctif du mode sombre forcé sur téléphone.
 - Questions ouvertes : horaires réels et groupes à saisir ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

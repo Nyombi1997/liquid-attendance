@@ -3,8 +3,12 @@
    Boutons et champs : coins arrondis à 5 px maximum */
 
 :root {
-  /* Thème clair uniquement : empêche le mode sombre automatique des téléphones */
-  color-scheme: only light;
+  /* Thème clair uniquement, même quand le téléphone est en mode sombre.
+     Les navigateurs mobiles (Chrome « assombrir les sites », Samsung Internet,
+     Xiaomi…) n'assombrissent de force que les pages qui ne gèrent pas le mode
+     sombre : la racine annonce donc « light dark » (la page s'en occupe), puis
+     tout le contenu est rendu en clair (body ci-dessous et fond de html). */
+  color-scheme: light dark;
   --primary: #273c88;
   --primary-700: #1c2c66;
   --primary-600: #22357a;
@@ -28,9 +32,14 @@
   --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+/* Mode sombre du téléphone : on garde volontairement les couleurs claires */
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #f2f4f9; --surface: #ffffff; --text: #1b2142; }
+}
+
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; font-family: var(--font); font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg); }
+html { -webkit-text-size-adjust: 100%; background: var(--bg); color: var(--text); }
+body { color-scheme: only light; margin: 0; font-family: var(--font); font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg); }
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1, h2 { margin: 0; line-height: 1.25; }
@@ -88,7 +97,7 @@ small, .small { font-size: 12px; }
 .card { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow); padding: 20px; }
 .card-flat { box-shadow: none; border: 1px solid var(--border); }
 .card-narrow { max-width: 720px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .card-head h2 { display: flex; align-items: center; gap: 8px; }
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .table-card { padding: 0; overflow: hidden; }

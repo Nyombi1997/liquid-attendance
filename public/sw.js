@@ -5,7 +5,7 @@
 // (helper PHP asset()). Une URL versionnée ne change jamais de contenu : elle
 // est servie depuis le cache, et seule la dernière version de chaque fichier
 // est gardée. Inutile de modifier CACHE à chaque mise à jour.
-const CACHE = 'liquid-v3';
+const CACHE = 'liquid-v4'; // v4 : page hors ligne (thème clair forcé)
 const PRECACHE = ['/offline.html', '/assets/js/offline.js', '/assets/icons.svg', '/assets/img/logo.svg', '/assets/img/icon-192.png'];
 
 self.addEventListener('install', (e) => {
