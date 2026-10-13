@@ -46,6 +46,7 @@ $r->post('/groupes/{id}/supprimer', [A\GroupController::class, 'destroy']);
 
 // Agents (cartes avec photo) : managers limités à leur département ; RH : disponibilité seulement
 $r->get('/agents', [A\AgentController::class, 'index'], 'board');
+$r->get('/agents/export', [A\AgentController::class, 'export'], 'export');
 $r->get('/agents/{id}/photo', [A\AgentController::class, 'photo'], 'board');
 $r->post('/agents/{id}', [A\AgentController::class, 'update']);
 $r->post('/agents/{id}/statut', [A\AgentController::class, 'status'], 'status');

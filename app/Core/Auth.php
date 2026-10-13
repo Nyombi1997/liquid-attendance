@@ -22,6 +22,7 @@ use App\Modules\Platform\Services\Departments;
  *   calendar : calendrier de présence (temps au bureau, absences et leurs raisons)
  *   view     : autres pages de consultation (corrections, accès, horaires, groupes, pointeuses…)
  *   status   : disponibilité des agents (statut de travail)
+ *   export   : rapport Excel de la page Agents
  *   manage   : toutes les autres modifications
  *   admin    : comptes, pointeuses, journal
  * Les données d'un manager sont en plus filtrées par departmentScope().
@@ -35,6 +36,7 @@ final class Auth
         'calendar' => ['admin', 'rh', 'manager'],
         'view'     => ['admin', 'ceo', 'lecteur'],
         'status'   => ['admin', 'rh'],
+        'export'   => ['admin', 'rh'],
         'manage'   => ['admin'],
         'admin'    => ['admin'],
     ];

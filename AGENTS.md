@@ -29,6 +29,7 @@ storage/                     fichiers déposés (photos) ; en production volume 
   - `calendar` : calendrier de présence — `admin`, `rh`, `manager` ;
   - `view` : autres pages de consultation (défaut des routes GET) — `admin`, `ceo`, `lecteur` ;
   - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
+  - `export` : rapport Excel de la page Agents (`/agents/export`) — `admin`, `rh` ;
   - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
   - `admin` : comptes, pointeuses, journal.
 - **CEO** : tout voir (sauf le calendrier), ne rien modifier. **Manager** : uniquement son département et ses sous-départements (Agents, tableau de bord, présence du jour, Calendrier, Employés). **RH** : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture.
@@ -76,6 +77,7 @@ storage/                     fichiers déposés (photos) ; en production volume 
 - `/api/direct` renvoie l'état déjà calculé de chaque carte (`days[].card`) : **pas de règle métier en JavaScript**, `app.js` ne fait qu'afficher.
 - Un clic sur la photo d'une carte ouvre `/employes/{id}` ; le bouton appareil photo (admin) reste un bouton à part, au-dessus du lien.
 - Photo : recadrée dans le navigateur (`createCropper` dans `app.js`, JPEG 512×512), gabarit partagé `Views/_photo_cropper.php` (page Agents et « Modifier l'employé », où `$cropperPhoto` l'initialise seul), envoyée dans `photo_data`, contrôlée et enregistrée par `Services/AgentPhoto.php` (pas d'extension GD dans le conteneur). URL versionnée : `photo_url($emp)` ; pastille ronde : `avatar($nom, photo_url($emp))`.
+- Rapport Excel (`AgentController::export`, bouton `data-agent-export`) : même liste que l'écran (`agents()` du contrôleur), filtrée côté serveur par `filtre` (clé de `AgentStatus::FILTERS`) et `q` ; `app.js` ne fait que recopier la puce et la recherche dans le lien. Fichier écrit par `App\Core\Xlsx` (pas d'extension zip dans le conteneur) ; exports Excel uniquement en `.xlsx`.
 - Disponibilité saisie (`AgentController::status`) : mettre à jour `employees.work_status*` **et** l'historique `WorkStatuses::record()` (lu par le calendrier).
 
 ### Calendrier (`/calendrier`)

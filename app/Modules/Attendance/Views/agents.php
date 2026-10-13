@@ -42,9 +42,15 @@ foreach ($tree['nodes'] as $n) {
     <h1>Agents<?= $depName !== '' ? ' · ' . e($depName) : ($dep === 'aucun' ? ' · Sans département' : '') ?></h1>
     <p class="muted"><?= count($agents) ?> agent(s) · arrivées de <?= e(date_fr($today)) ?>, mises à jour en direct.</p>
   </div>
-  <?php if ($manage): ?>
+  <?php if ($manage || can('export')): ?>
   <div class="head-actions">
-    <a class="btn btn-outline" href="/departements"><?= fa('fa-solid fa-sitemap') ?> Départements</a>
+    <?php if (can('export')): ?>
+      <a class="btn btn-primary" href="<?= e(url('/agents/export', array_filter(['dep' => $dep, 'q' => $q]))) ?>" data-agent-export
+         title="Agents affichés (département, filtre et recherche en cours), au format Excel"><?= fa('fa-solid fa-file-excel') ?> Exporter en Excel</a>
+    <?php endif; ?>
+    <?php if ($manage): ?>
+      <a class="btn btn-outline" href="/departements"><?= fa('fa-solid fa-sitemap') ?> Départements</a>
+    <?php endif; ?>
   </div>
   <?php endif; ?>
 </div>

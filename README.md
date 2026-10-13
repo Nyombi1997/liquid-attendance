@@ -42,14 +42,15 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Recherche avec propositions** : dans toutes les barres de recherche, les agents correspondants s'affichent dès la première lettre (nom, titre, matricule ou n° de pointeuse) ; un clic (ou flèches + Entrée) ouvre la fiche ou applique le filtre. Propositions limitées au périmètre de l'utilisateur (`/api/suggestions`).
 - **Mots de passe** : bouton « œil » sur chaque champ pour afficher ou masquer la saisie.
 - **Identifiants insensibles à la casse** : `Admin`, `ADMIN` et `admin` désignent le même compte (enregistré en minuscules).
-- **Export CSV** (compatible Excel), **journal d'activité**, rôles ci-dessous.
+- **Rapport Excel de la page Agents** (administrateur et RH) : bouton « Exporter en Excel », fichier `.xlsx` des agents affichés (département, puce Arrivés / À l'heure / En retard / Pas arrivés / Télétravail / Mission / Congé, recherche), avec une feuille de synthèse par filtre.
+- **Export CSV** de la présence (compatible Excel), **journal d'activité**, rôles ci-dessous.
 
 ### Rôles
 
 | Rôle | Accès | Page d'accueil |
 |---|---|---|
 | Administrateur | Tout, et **seul rôle qui modifie** : fiches et photos des agents, employés, départements, groupes, horaires, corrections, comptes, pointeuses | Tableau de bord |
-| Ressources humaines | Tableau de bord, Agents (**mise à jour de la disponibilité uniquement**), Calendrier, Employés (consultation) ; tous les départements. Ni sorties manquantes ni modules | Tableau de bord |
+| Ressources humaines | Tableau de bord, Agents (**mise à jour de la disponibilité uniquement**, rapport Excel), Calendrier, Employés (consultation) ; tous les départements. Ni sorties manquantes ni modules | Tableau de bord |
 | Direction (CEO) | Toutes les pages de consultation (sauf le calendrier), tous les départements, **aucune modification** | Agents |
 | Manager de département | Agents, tableau de bord, présence **du jour**, Calendrier et Employés (consultation), pour son département et ses sous-départements uniquement. Ni sorties manquantes ni modules | Agents |
 | Lecteur | Consultation et export, sans modification | Tableau de bord |

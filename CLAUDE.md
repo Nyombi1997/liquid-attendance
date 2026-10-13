@@ -71,7 +71,7 @@ Ne jamais utiliser 7080. Tout nouveau port doit être vérifié libre (sudo ss -
 
 ```
 app/bootstrap.php            autoload App\ → app/, config, helpers
-app/Core/                    Router, Database (PDO, requêtes préparées), View, Auth (rôles, périmètre), Csrf, Audit, Config, Controller, helpers.php
+app/Core/                    Router, Database (PDO, requêtes préparées), View, Auth (rôles, périmètre), Csrf, Audit, Config, Controller, Xlsx (classeurs Excel), helpers.php
 app/Modules/Platform/        connexion, profil, utilisateurs, départements, pages « à venir » (Fleet, Leave)
   Services/Departments.php   arbre des départements, périmètre SQL des managers
 app/Modules/Attendance/      module Présence : Controllers/, Services/, Views/
@@ -97,6 +97,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 | `calendar` | admin, rh, manager | `/calendrier` |
 | `view` | admin, ceo, lecteur | `/groupes`, `/corrections`, `/acces`, `/horaires`, `/pointeuses`, `/presence/export`, `/flotte`, `/conges` |
 | `status` | admin, rh | POST `/agents/{id}/statut` (disponibilité) |
+| `export` | admin, rh | `/agents/export` (rapport Excel de la page Agents) |
 | `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
 | `admin` | admin | `/utilisateurs`, `/journal`, POST `/pointeuses` |
 
@@ -180,6 +181,7 @@ D'après docs/CADRAGE.md (état au 9 oct. 2026) :
 - 12 oct. 2026 (fin) : désactivation d'un agent depuis la page Agents, temps « en cours » maintenu après un retour (entrée après sortie), bouton « Aujourd'hui » du calendrier vers la vue jour, bordures colorées d'un seul côté retirées du style.
 - 12 oct. 2026 (soir) : tableau de bord en camemberts (présents/absents, à l'heure/en retard, en %), filtres appliqués sans bouton, filtre « Présents (même sortis) » (Présence `status=venus`, Calendrier `presence=venus`), heures « 00h…23h » du calendrier, reprise du direct au déverrouillage du téléphone (page hors ligne qui se recharge seule), thème clair forcé.
 - 12 oct. 2026 (nuit) : page Pointages (`/pointages`, droit `board`, périmètre manager, aujourd'hui seulement pour RH/managers) au lieu du lien « Accès aux salles » du tableau de bord, derniers pointages cliquables vers la fiche de l'agent, bouton « Voir le rapport détaillé », correctif du mode sombre forcé sur téléphone.
+- 13 oct. 2026 : rapport Excel (.xlsx) de la page Agents (`/agents/export`, droit `export` : admin et RH) selon le département, la puce de filtre et la recherche ; classeur écrit par `App\Core\Xlsx` (sans extension zip).
 - Questions ouvertes : horaires réels et groupes à saisir ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

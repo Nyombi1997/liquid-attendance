@@ -7,6 +7,7 @@ use App\Core\Audit;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\Xlsx;
 use App\Modules\Attendance\Services\AgentPhoto;
 use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
@@ -20,6 +21,7 @@ use App\Modules\Platform\Services\Departments;
  * Modification de la fiche, de la photo et désactivation : droit « manage » (administrateur) ;
  * disponibilité (statut de travail) : droit « status » (administrateur et RH),
  * conservée dans l'historique work_statuses (affiché par le calendrier).
+ * Rapport Excel de la vue filtrée : droit « export » (administrateur et RH).
  */
 final class AgentController extends Controller
 {
@@ -27,9 +29,99 @@ final class AgentController extends Controller
     {
         $today = date('Y-m-d');
         $scope = Auth::departmentScope();
+        [$dep, $agents, $counts] = $this->agents((string) $this->input('dep', ''), $today);
+
+        $this->render('Attendance:agents', [
+            'title'       => 'Agents',
+            'agents'      => $agents,
+            'counts'      => $counts,
+            'dep'         => $dep,
+            'tree'        => $this->tree($scope),
+            'departments' => Departments::tree(),
+            'today'       => $today,
+            'live'        => DashboardStats::liveState($today),
+        ]);
+    }
+
+    /**
+     * Rapport Excel de la page Agents (droit « export » : administrateur et RH),
+     * avec les mêmes critères que l'écran : département, puce de filtre, recherche.
+     */
+    public function export(): void
+    {
+        $today = date('Y-m-d');
+        [$dep, $agents, $counts] = $this->agents((string) $this->input('dep', ''), $today);
+        $filter = (string) $this->input('filtre', 'tous');
+        if (!isset(AgentStatus::FILTERS[$filter])) {
+            $filter = 'tous';
+        }
+        $search = trim(mb_substr((string) $this->input('q', ''), 0, 60));
+        $q = self::fold($search);
+
+        $agents = array_values(array_filter($agents, static fn(array $a) => in_array($filter, $a['filters'], true)
+            && ($q === '' || str_contains(self::fold(implode(' ', array_filter([$a['name'], $a['job_title'], $a['email'],
+                $a['phone'], $a['department'], $a['group_name']]))), $q))));
+
+        $depLabel = match (true) {
+            $dep === 'aucun' => 'Sans département',
+            $dep !== ''      => Departments::path((int) $dep),
+            default          => 'Tous',
+        };
+        $criteria = 'Filtre : ' . AgentStatus::FILTERS[$filter] . ' · Département : ' . $depLabel
+            . ($q !== '' ? ' · Recherche : « ' . $search . ' »' : '');
+
+        $rows = [
+            ['Rapport des agents · ' . date_fr($today)],
+            [$criteria],
+            ['Généré le ' . date('d/m/Y à H:i') . ' par ' . (Auth::user()['full_name'] ?: Auth::user()['username']) . ' · ' . count($agents) . ' agent(s)'],
+            [],
+            ['Nom', 'Titre', 'Département', 'Groupe', 'E-mail', 'Téléphone', 'Disponibilité', 'Jusqu\'au', 'Note',
+                'Arrivée', 'Retard (min)', 'Situation'],
+        ];
+        foreach ($agents as $a) {
+            $w = $a['work'];
+            $arr = $a['arrival'];
+            $rows[] = [
+                $a['name'], $a['job_title'], $a['department'], $a['group_name'], $a['email'], $a['phone'],
+                $w['label'],
+                $w['manual'] && $a['work_status_until'] ? date('d/m/Y', strtotime($a['work_status_until'])) : null,
+                $w['manual'] ? $a['work_status_note'] : null,
+                in_array($arr['kind'], ['ontime', 'late'], true) ? $arr['label'] : null,
+                $arr['kind'] === 'late' ? (int) $a['late_minutes'] : null,
+                self::SITUATIONS[$arr['kind']] ?? $arr['title'],
+            ];
+        }
+
+        // Synthèse : nombre d'agents par puce (département et recherche appliqués)
+        $summary = [['Synthèse · ' . date_fr($today)], ['Département : ' . $depLabel], [], ['Filtre', 'Agents']];
+        foreach (AgentStatus::FILTERS as $k => $label) {
+            $summary[] = [$label, (int) $counts[$k]];
+        }
+
+        Audit::log('agents_export', ['filtre' => $filter, 'departement' => $dep ?: null, 'recherche' => $q ?: null, 'lignes' => count($agents)]);
+        Xlsx::send(sprintf('agents_%s_%s.xlsx', $today, $filter), [
+            ['name' => 'Agents', 'rows' => $rows, 'header' => 4, 'title' => 3,
+             'widths' => [28, 26, 30, 16, 32, 18, 20, 12, 30, 10, 12, 30]],
+            ['name' => 'Synthèse', 'rows' => $summary, 'header' => 3, 'title' => 2, 'widths' => [24, 10]],
+        ]);
+    }
+
+    /** Libellé de la colonne « Situation » selon l'arrivée (AgentStatus::arrival()) ; sinon le détail. */
+    private const SITUATIONS = [
+        'ontime'  => 'À l\'heure',
+        'late'    => 'En retard',
+        'missing' => 'Absent (pas arrivé)',
+    ];
+
+    /**
+     * Agents actifs du périmètre (département choisi compris) avec leur statut du jour.
+     * @return array{0:string, 1:array, 2:array} département retenu, agents, nombre par puce
+     */
+    private function agents(string $dep, string $today): array
+    {
+        $scope = Auth::departmentScope();
 
         // Département choisi dans l'arbre (avec ses sous-départements)
-        $dep = (string) $this->input('dep', '');
         $depFilter = '';
         if ($dep === 'aucun' && $scope === null) {
             $depFilter = ' AND e.department_id IS NULL';
@@ -67,17 +159,16 @@ final class AgentController extends Controller
             }
             $agents[] = $r;
         }
+        return [$dep, $agents, $counts];
+    }
 
-        $this->render('Attendance:agents', [
-            'title'       => 'Agents',
-            'agents'      => $agents,
-            'counts'      => $counts,
-            'dep'         => $dep,
-            'tree'        => $this->tree($scope),
-            'departments' => Departments::tree(),
-            'today'       => $today,
-            'live'        => DashboardStats::liveState($today),
-        ]);
+    /** Minuscules sans accents (même recherche que fold() dans app.js). */
+    private static function fold(string $s): string
+    {
+        $s = mb_strtolower(trim($s));
+        return strtr($s, ['à' => 'a', 'â' => 'a', 'ä' => 'a', 'á' => 'a', 'ã' => 'a', 'ç' => 'c', 'é' => 'e', 'è' => 'e',
+            'ê' => 'e', 'ë' => 'e', 'î' => 'i', 'ï' => 'i', 'í' => 'i', 'ô' => 'o', 'ö' => 'o', 'ó' => 'o', 'õ' => 'o',
+            'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ú' => 'u', 'ÿ' => 'y', 'ñ' => 'n']);
     }
 
     /** Arbre des départements avec le nombre d'agents (sous-départements compris). */

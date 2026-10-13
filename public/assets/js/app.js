@@ -331,6 +331,7 @@
     const cards = $$('[data-agent]', gridEl);
     const search = document.querySelector('[data-agent-search]');
     const empty = document.querySelector('[data-agents-empty]');
+    const exportLink = document.querySelector('[data-agent-export]');
     let filter = 'tous';
 
     const apply = () => {
@@ -342,6 +343,13 @@
         shown += ok ? 1 : 0;
       });
       if (empty) empty.hidden = shown > 0;
+      // Export Excel : mêmes critères que l'écran (le serveur refait le filtrage)
+      if (exportLink) {
+        const u = new URL(exportLink.href, location.href);
+        u.searchParams.set('filtre', filter);
+        if (search?.value.trim()) u.searchParams.set('q', search.value.trim()); else u.searchParams.delete('q');
+        exportLink.href = u.pathname + u.search;
+      }
     };
     const recount = () => {
       $$('[data-filter-count]').forEach((n) => {
