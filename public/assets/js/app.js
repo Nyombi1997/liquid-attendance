@@ -327,11 +327,51 @@
   const grid = document.querySelector('[data-agent-grid]');
   if (grid) setupAgents(grid);
 
+  // Fenêtre « Exporter en Excel » (page Agents) : période rapide, filtre et recherche
+  // repris de l'écran à l'ouverture ; le serveur calcule tout (pas de règle ici)
+  function setupExport(currentFilter, currentSearch) {
+    const dialog = document.querySelector('[data-export-dialog]');
+    if (!dialog) return;
+    const from = dialog.querySelector('[data-export-from]');
+    const to = dialog.querySelector('[data-export-to]');
+    const ranges = $$('[data-export-range]', dialog);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const range = (key) => {
+      const t = new Date(to.max + 'T12:00:00'); // date du serveur
+      const y = t.getFullYear(), m = t.getMonth();
+      switch (key) {
+        case 'yesterday': { const d = new Date(y, m, t.getDate() - 1); return [d, d]; }
+        case 'week': return [new Date(y, m, t.getDate() - ((t.getDay() + 6) % 7)), t];
+        case 'month': return [new Date(y, m, 1), t];
+        case 'last-month': return [new Date(y, m - 1, 1), new Date(y, m, 0)];
+        default: return [t, t];
+      }
+    };
+    const mark = () => ranges.forEach((b) => {
+      const [a, z] = range(b.dataset.exportRange);
+      b.classList.toggle('is-active', iso(a) === from.value && iso(z) === to.value);
+    });
+    ranges.forEach((b) => b.addEventListener('click', () => {
+      const [a, z] = range(b.dataset.exportRange);
+      from.value = iso(a);
+      to.value = iso(z);
+      mark();
+    }));
+    [from, to].forEach((i) => i.addEventListener('change', mark));
+    $$('[data-dialog="export-dialog"]').forEach((btn) => btn.addEventListener('click', () => {
+      dialog.querySelector('[data-export-filter]').value = currentFilter();
+      dialog.querySelector('[data-export-search]').value = currentSearch();
+    }));
+    dialog.querySelector('[data-export-form]').addEventListener('submit', () => {
+      if (to.value < from.value) [from.value, to.value] = [to.value, from.value];
+      setTimeout(() => dialog.close(), 0); // téléchargement : la page reste affichée
+    });
+  }
+
   function setupAgents(gridEl) {
     const cards = $$('[data-agent]', gridEl);
     const search = document.querySelector('[data-agent-search]');
     const empty = document.querySelector('[data-agents-empty]');
-    const exportLink = document.querySelector('[data-agent-export]');
     let filter = 'tous';
 
     const apply = () => {
@@ -343,13 +383,6 @@
         shown += ok ? 1 : 0;
       });
       if (empty) empty.hidden = shown > 0;
-      // Export Excel : mêmes critères que l'écran (le serveur refait le filtrage)
-      if (exportLink) {
-        const u = new URL(exportLink.href, location.href);
-        u.searchParams.set('filtre', filter);
-        if (search?.value.trim()) u.searchParams.set('q', search.value.trim()); else u.searchParams.delete('q');
-        exportLink.href = u.pathname + u.search;
-      }
     };
     const recount = () => {
       $$('[data-filter-count]').forEach((n) => {
@@ -366,6 +399,7 @@
     }));
     search?.addEventListener('input', apply);
     if (search?.value) apply();
+    setupExport(() => filter, () => search?.value.trim() || '');
     // Appelé par le mode direct après la mise à jour d'une carte
     gridEl.refreshFilters = () => { recount(); apply(); };
 

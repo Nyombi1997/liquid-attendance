@@ -42,7 +42,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Recherche avec propositions** : dans toutes les barres de recherche, les agents correspondants s'affichent dès la première lettre (nom, titre, matricule ou n° de pointeuse) ; un clic (ou flèches + Entrée) ouvre la fiche ou applique le filtre. Propositions limitées au périmètre de l'utilisateur (`/api/suggestions`).
 - **Mots de passe** : bouton « œil » sur chaque champ pour afficher ou masquer la saisie.
 - **Identifiants insensibles à la casse** : `Admin`, `ADMIN` et `admin` désignent le même compte (enregistré en minuscules).
-- **Rapport Excel de la page Agents** (administrateur et RH) : bouton « Exporter en Excel », fichier `.xlsx` des agents affichés (département, puce Arrivés / À l'heure / En retard / Pas arrivés / Télétravail / Mission / Congé, recherche), avec une feuille de synthèse par filtre.
+- **Rapport Excel de la page Agents** (administrateur et RH) : bouton « Exporter en Excel » : choix de la période (aujourd'hui, hier, cette semaine, ce mois, mois dernier ou dates libres, 93 jours au plus), des agents (tous, arrivés, à l'heure, en retard, pas arrivés, télétravail, mission, congé), du département et d'un agent. Fichier `.xlsx` : une ligne par agent et par jour (arrivée, retard, départ, présence, disponibilité d'après l'historique), récapitulatif par agent et synthèse par filtre.
 - **Export CSV** de la présence (compatible Excel), **journal d'activité**, rôles ci-dessous.
 
 ### Rôles

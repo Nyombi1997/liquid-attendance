@@ -45,8 +45,7 @@ foreach ($tree['nodes'] as $n) {
   <?php if ($manage || can('export')): ?>
   <div class="head-actions">
     <?php if (can('export')): ?>
-      <a class="btn btn-primary" href="<?= e(url('/agents/export', array_filter(['dep' => $dep, 'q' => $q]))) ?>" data-agent-export
-         title="Agents affichés (département, filtre et recherche en cours), au format Excel"><?= fa('fa-solid fa-file-excel') ?> Exporter en Excel</a>
+      <button type="button" class="btn btn-primary" data-dialog="export-dialog"><?= fa('fa-solid fa-file-excel') ?> Exporter en Excel</button>
     <?php endif; ?>
     <?php if ($manage): ?>
       <a class="btn btn-outline" href="/departements"><?= fa('fa-solid fa-sitemap') ?> Départements</a>
@@ -212,6 +211,47 @@ foreach ($tree['nodes'] as $n) {
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
       <button class="btn btn-primary" type="submit">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+<?php endif; ?>
+
+<?php if (can('export')): ?>
+<dialog id="export-dialog" class="dialog" data-export-dialog>
+  <form method="get" action="/agents/export" class="stack" data-export-form>
+    <h2>Exporter en Excel</h2>
+    <p class="muted small">Une ligne par agent et par jour, avec un récapitulatif par agent. Période de 93 jours au plus.</p>
+    <div class="chips" role="group" aria-label="Période rapide">
+      <button type="button" class="chip is-active" data-export-range="today">Aujourd'hui</button>
+      <button type="button" class="chip" data-export-range="yesterday">Hier</button>
+      <button type="button" class="chip" data-export-range="week">Cette semaine</button>
+      <button type="button" class="chip" data-export-range="month">Ce mois</button>
+      <button type="button" class="chip" data-export-range="last-month">Mois dernier</button>
+    </div>
+    <div class="grid-2 gap-sm">
+      <label class="field"><span>Du</span><input type="date" name="du" value="<?= e($today) ?>" max="<?= e($today) ?>" required data-export-from></label>
+      <label class="field"><span>Au</span><input type="date" name="au" value="<?= e($today) ?>" max="<?= e($today) ?>" required data-export-to></label>
+    </div>
+    <div class="grid-2 gap-sm">
+      <label class="field"><span>Agents</span>
+        <select name="filtre" data-export-filter>
+          <?php foreach (AgentStatus::FILTERS as $k => $label): ?>
+            <option value="<?= $k ?>"><?= e($k === 'tous' ? 'Tous les agents' : $label) ?></option>
+          <?php endforeach; ?>
+        </select></label>
+      <label class="field"><span>Département</span>
+        <select name="dep">
+          <option value="">Tous</option>
+          <?php foreach ($tree['nodes'] as $d): ?>
+            <option value="<?= (int) $d['id'] ?>"<?= (string) $d['id'] === $dep ? ' selected' : '' ?>><?= str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) ?></option>
+          <?php endforeach; ?>
+          <?php if ($tree['none'] !== null): ?><option value="aucun"<?= $dep === 'aucun' ? ' selected' : '' ?>>Sans département</option><?php endif; ?>
+        </select></label>
+    </div>
+    <label class="field"><span>Agent (facultatif)</span><input type="search" name="q" value="<?= e($q) ?>" maxlength="60" placeholder="Nom, titre, e-mail ou téléphone" data-export-search></label>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" type="button" data-close>Annuler</button>
+      <button class="btn btn-primary" type="submit"><?= fa('fa-solid fa-download') ?> Télécharger (.xlsx)</button>
     </div>
   </form>
 </dialog>

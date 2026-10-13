@@ -21,7 +21,7 @@ use App\Modules\Platform\Services\Departments;
  * Modification de la fiche, de la photo et désactivation : droit « manage » (administrateur) ;
  * disponibilité (statut de travail) : droit « status » (administrateur et RH),
  * conservée dans l'historique work_statuses (affiché par le calendrier).
- * Rapport Excel de la vue filtrée : droit « export » (administrateur et RH).
+ * Rapport Excel (période, filtre, département) : droit « export » (administrateur et RH).
  */
 final class AgentController extends Controller
 {
@@ -43,75 +43,185 @@ final class AgentController extends Controller
         ]);
     }
 
+    /** Durée maximale d'un rapport Excel (jours). */
+    private const EXPORT_MAX_DAYS = 93;
+
     /**
-     * Rapport Excel de la page Agents (droit « export » : administrateur et RH),
-     * avec les mêmes critères que l'écran : département, puce de filtre, recherche.
+     * Rapport Excel (droit « export » : administrateur et RH), choisi dans la fenêtre
+     * « Exporter en Excel » de la page Agents : période (du / au), filtre (puces
+     * AgentStatus::FILTERS), département et recherche. Une ligne par agent et par jour,
+     * plus un récapitulatif par agent et une synthèse par filtre.
+     * Jours passés : disponibilité d'après l'historique (WorkStatuses::reasons()).
      */
     public function export(): void
     {
         $today = date('Y-m-d');
-        [$dep, $agents, $counts] = $this->agents((string) $this->input('dep', ''), $today);
+        $date = static fn($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) ? $v : $today;
+        $from = min($date($this->input('du')), $today);
+        $to = min($date($this->input('au')), $today);
+        if ($to < $from) {
+            [$from, $to] = [$to, $from];
+        }
+        if ((strtotime($to) - strtotime($from)) / 86400 >= self::EXPORT_MAX_DAYS) {
+            flash('error', 'Période trop longue : ' . self::EXPORT_MAX_DAYS . ' jours au plus par export.');
+            $this->redirect('/agents');
+        }
         $filter = (string) $this->input('filtre', 'tous');
         if (!isset(AgentStatus::FILTERS[$filter])) {
             $filter = 'tous';
         }
         $search = trim(mb_substr((string) $this->input('q', ''), 0, 60));
         $q = self::fold($search);
+        [$dep, $depFilter] = $this->departmentFilter((string) $this->input('dep', ''));
 
-        $agents = array_values(array_filter($agents, static fn(array $a) => in_array($filter, $a['filters'], true)
-            && ($q === '' || str_contains(self::fold(implode(' ', array_filter([$a['name'], $a['job_title'], $a['email'],
-                $a['phone'], $a['department'], $a['group_name']]))), $q))));
+        $employees = [];
+        foreach (Database::all(
+            'SELECT e.id, e.name, e.job_title, e.email, e.phone, e.department_id,
+                    e.work_status, e.work_status_until, e.work_status_note, g.name group_name
+               FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id
+              WHERE e.active = 1' . Departments::sql(Auth::departmentScope()) . $depFilter . '
+              ORDER BY e.name'
+        ) as $e) {
+            $e['department'] = Departments::path($e['department_id'] !== null ? (int) $e['department_id'] : null);
+            if ($q === '' || str_contains(self::fold(implode(' ', array_filter([$e['name'], $e['job_title'], $e['email'],
+                    $e['phone'], $e['department'], $e['group_name']]))), $q)) {
+                $employees[(int) $e['id']] = $e;
+            }
+        }
+
+        $days = [];
+        if ($employees) {
+            $in = implode(',', array_keys($employees));
+            foreach (Database::all(
+                "SELECT employee_id, work_date, expected_start, first_in, last_out, corrected_out, worked_minutes, late_minutes, status
+                   FROM attendance_days WHERE employee_id IN ($in) AND work_date BETWEEN ? AND ?",
+                [$from, $to]
+            ) as $d) {
+                $days[(int) $d['employee_id']][$d['work_date']] = $d;
+            }
+        }
+        $reasons = WorkStatuses::reasons(array_keys($employees), $from, $to);
+
+        $counts = array_fill_keys(array_keys(AgentStatus::FILTERS), 0);
+        $perAgent = [];
+        $lines = [];
+        for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+            foreach ($employees as $id => $e) {
+                $day = $days[$id][$d] ?? null;
+                if ($d === $today) {
+                    $work = AgentStatus::work($e, $day['first_in'] ?? null, $today); // comme la page Agents
+                    $note = $work['manual'] ? $e['work_status_note'] : null;
+                    $until = $work['manual'] ? $e['work_status_until'] : null;
+                } else {
+                    $r = $reasons[$id][$d] ?? null;
+                    $key = $r['status'] ?? (!empty($day['first_in']) ? 'bureau' : 'none');
+                    $work = ['key' => $key, 'label' => $key === 'none' ? 'Pas au bureau' : AgentStatus::WORK[$key][0]];
+                    $note = $r['note'] ?? null;
+                    $until = $r['until'] ?? null;
+                }
+                $arr = AgentStatus::arrival($day, $work['key']);
+                $filters = AgentStatus::filters($work['key'], $arr['kind']);
+                foreach ($filters as $f) {
+                    $counts[$f]++;
+                    $perAgent[$id][$f] = ($perAgent[$id][$f] ?? 0) + 1;
+                }
+                if ($arr['kind'] === 'late') {
+                    $perAgent[$id]['late_min'] = ($perAgent[$id]['late_min'] ?? 0) + (int) $day['late_minutes'];
+                }
+                if (!in_array($filter, $filters, true)) {
+                    continue;
+                }
+                $out = $day['corrected_out'] ?? $day['last_out'] ?? null;
+                $lines[] = [
+                    date('d/m/Y', strtotime($d)), strtok(day_short($d), ' '), $e['name'], $e['job_title'], $e['department'], $e['group_name'],
+                    $work['label'], $until ? date('d/m/Y', strtotime($until)) : null, $note,
+                    in_array($arr['kind'], ['ontime', 'late'], true) ? $arr['label'] : null,
+                    $arr['kind'] === 'late' ? (int) $day['late_minutes'] : null,
+                    $out && !empty($day['first_in']) ? time_label($out) : null,
+                    !empty($day['worked_minutes']) ? (int) $day['worked_minutes'] : null,
+                    self::situation($arr['kind'], $work['key'], $day),
+                    $e['email'], $e['phone'],
+                ];
+            }
+        }
 
         $depLabel = match (true) {
             $dep === 'aucun' => 'Sans département',
             $dep !== ''      => Departments::path((int) $dep),
             default          => 'Tous',
         };
+        $period = $from === $to ? date_fr($from) : 'du ' . date_fr($from, false) . ' au ' . date_fr($to, false);
         $criteria = 'Filtre : ' . AgentStatus::FILTERS[$filter] . ' · Département : ' . $depLabel
-            . ($q !== '' ? ' · Recherche : « ' . $search . ' »' : '');
+            . ($search !== '' ? ' · Recherche : « ' . $search . ' »' : '');
+        $by = 'Généré le ' . date('d/m/Y à H:i') . ' par ' . (Auth::user()['full_name'] ?: Auth::user()['username']);
 
         $rows = [
-            ['Rapport des agents · ' . date_fr($today)],
-            [$criteria],
-            ['Généré le ' . date('d/m/Y à H:i') . ' par ' . (Auth::user()['full_name'] ?: Auth::user()['username']) . ' · ' . count($agents) . ' agent(s)'],
-            [],
-            ['Nom', 'Titre', 'Département', 'Groupe', 'E-mail', 'Téléphone', 'Disponibilité', 'Jusqu\'au', 'Note',
-                'Arrivée', 'Retard (min)', 'Situation'],
+            ['Rapport des agents · ' . $period], [$criteria], [$by . ' · ' . count($lines) . ' ligne(s)'], [],
+            ['Date', 'Jour', 'Nom', 'Titre', 'Département', 'Groupe', 'Disponibilité', 'Jusqu\'au', 'Note',
+                'Arrivée', 'Retard (min)', 'Départ', 'Présence (min)', 'Situation', 'E-mail', 'Téléphone'],
+            ...$lines,
         ];
-        foreach ($agents as $a) {
-            $w = $a['work'];
-            $arr = $a['arrival'];
-            $rows[] = [
-                $a['name'], $a['job_title'], $a['department'], $a['group_name'], $a['email'], $a['phone'],
-                $w['label'],
-                $w['manual'] && $a['work_status_until'] ? date('d/m/Y', strtotime($a['work_status_until'])) : null,
-                $w['manual'] ? $a['work_status_note'] : null,
-                in_array($arr['kind'], ['ontime', 'late'], true) ? $arr['label'] : null,
-                $arr['kind'] === 'late' ? (int) $a['late_minutes'] : null,
-                self::SITUATIONS[$arr['kind']] ?? $arr['title'],
-            ];
+
+        // Récapitulatif par agent sur la période (agents ayant au moins une ligne dans le filtre)
+        $recap = [['Récapitulatif par agent · ' . $period], [$criteria], [],
+            ['Nom', 'Département', 'Jours arrivés', 'À l\'heure', 'En retard', 'Retard total (min)', 'Pas arrivés',
+                'Télétravail', 'Mission', 'Congé']];
+        foreach ($employees as $id => $e) {
+            $n = $perAgent[$id] ?? [];
+            if (empty($n[$filter])) {
+                continue;
+            }
+            $recap[] = [$e['name'], $e['department'], $n['arrives'] ?? 0, $n['heure'] ?? 0, $n['retard'] ?? 0,
+                $n['late_min'] ?? 0, $n['absents'] ?? 0, $n['teletravail'] ?? 0, $n['mission'] ?? 0, $n['conge'] ?? 0];
         }
 
-        // Synthèse : nombre d'agents par puce (département et recherche appliqués)
-        $summary = [['Synthèse · ' . date_fr($today)], ['Département : ' . $depLabel], [], ['Filtre', 'Agents']];
+        // Synthèse : nombre de journées-agents par filtre (département et recherche appliqués)
+        $summary = [['Synthèse · ' . $period], ['Département : ' . $depLabel . ' · ' . count($employees) . ' agent(s)'], [],
+            ['Filtre', 'Journées']];
         foreach (AgentStatus::FILTERS as $k => $label) {
-            $summary[] = [$label, (int) $counts[$k]];
+            $summary[] = [$label, $counts[$k]];
         }
 
-        Audit::log('agents_export', ['filtre' => $filter, 'departement' => $dep ?: null, 'recherche' => $q ?: null, 'lignes' => count($agents)]);
-        Xlsx::send(sprintf('agents_%s_%s.xlsx', $today, $filter), [
-            ['name' => 'Agents', 'rows' => $rows, 'header' => 4, 'title' => 3,
-             'widths' => [28, 26, 30, 16, 32, 18, 20, 12, 30, 10, 12, 30]],
+        Audit::log('agents_export', ['du' => $from, 'au' => $to, 'filtre' => $filter, 'departement' => $dep ?: null,
+            'recherche' => $search ?: null, 'lignes' => count($lines)]);
+        Xlsx::send(sprintf('agents_%s_%s_%s.xlsx', $from, $to, $filter), [
+            ['name' => 'Détail', 'rows' => $rows, 'header' => 4, 'title' => 3,
+             'widths' => [11, 6, 26, 24, 28, 14, 18, 11, 26, 9, 11, 9, 13, 30, 30, 16]],
+            ['name' => 'Par agent', 'rows' => $recap, 'header' => 3, 'title' => 2,
+             'widths' => [28, 28, 13, 10, 10, 17, 12, 12, 10, 8]],
             ['name' => 'Synthèse', 'rows' => $summary, 'header' => 3, 'title' => 2, 'widths' => [24, 10]],
         ]);
     }
 
-    /** Libellé de la colonne « Situation » selon l'arrivée (AgentStatus::arrival()) ; sinon le détail. */
-    private const SITUATIONS = [
-        'ontime'  => 'À l\'heure',
-        'late'    => 'En retard',
-        'missing' => 'Absent (pas arrivé)',
-    ];
+    /** Colonne « Situation » du rapport, d'après l'arrivée (AgentStatus::arrival()) et la disponibilité. */
+    private static function situation(string $kind, string $work, ?array $day): string
+    {
+        return match (true) {
+            $kind === 'ontime'  => 'À l\'heure',
+            $kind === 'late'    => 'En retard',
+            $kind === 'missing' => 'Absent (pas arrivé)',
+            $kind === 'expected' => 'Attendu à ' . time_label($day['expected_start']),
+            in_array($work, ['teletravail', 'mission', 'conge'], true) => AgentStatus::WORK[$work][0],
+            $day === null || empty($day['status']) => 'Pas d\'horaire',
+            default => 'Repos',
+        };
+    }
+
+    /**
+     * Département choisi dans l'arbre (avec ses sous-départements), limité au périmètre.
+     * @return array{0:string, 1:string} département retenu ('' = tous), condition SQL
+     */
+    private function departmentFilter(string $dep): array
+    {
+        $scope = Auth::departmentScope();
+        if ($dep === 'aucun' && $scope === null) {
+            return [$dep, ' AND e.department_id IS NULL'];
+        }
+        if ((int) $dep > 0 && ($scope === null || in_array((int) $dep, $scope, true))) {
+            return [(string) (int) $dep, Departments::sql(Departments::descendants((int) $dep))];
+        }
+        return ['', ''];
+    }
 
     /**
      * Agents actifs du périmètre (département choisi compris) avec leur statut du jour.
@@ -120,16 +230,7 @@ final class AgentController extends Controller
     private function agents(string $dep, string $today): array
     {
         $scope = Auth::departmentScope();
-
-        // Département choisi dans l'arbre (avec ses sous-départements)
-        $depFilter = '';
-        if ($dep === 'aucun' && $scope === null) {
-            $depFilter = ' AND e.department_id IS NULL';
-        } elseif ((int) $dep > 0 && ($scope === null || in_array((int) $dep, $scope, true))) {
-            $depFilter = Departments::sql(Departments::descendants((int) $dep));
-        } else {
-            $dep = '';
-        }
+        [$dep, $depFilter] = $this->departmentFilter($dep);
 
         $rows = Database::all(
             'SELECT e.id, e.name, e.job_title, e.email, e.phone, e.department_id, e.group_id, e.photo_updated_at,
