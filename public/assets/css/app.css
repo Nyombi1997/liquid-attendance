@@ -622,7 +622,11 @@ a.req-card:hover { text-decoration: none; border-color: var(--primary-100); box-
 .tl-bar { position: absolute; top: 9px; bottom: 9px; z-index: 2; min-width: 4px; display: flex; align-items: center; padding: 0 7px; border-radius: var(--radius-ctl); background: var(--primary); color: #fff; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 a.tl-bar:hover { text-decoration: none; background: var(--primary-700); }
 .tl-bar.is-ongoing { background: var(--ok); }
-.tl-bar.is-conflict { background: var(--danger); }
+.tl-bar.is-current { background: var(--accent); }
+.tl-legend-slot { background: var(--accent-50); border: 1px dashed var(--accent); }
+.tl-sw-booked { background: var(--primary); }
+.tl-sw-ongoing { background: var(--ok); }
+.tl-sw-off { background: repeating-linear-gradient(135deg, #fff 0 3px, var(--danger-200) 3px 6px); border: 1px solid var(--danger-200); }
 .tl-off { position: absolute; inset: 0; z-index: 1; background: repeating-linear-gradient(135deg, transparent 0 8px, rgba(193, 52, 52, .09) 8px 16px); }
 .tl-row.is-blocked .tl-label { color: var(--muted); }
 .tl-pick { display: flex; align-items: center; gap: 9px; min-width: 0; cursor: pointer; flex: 1; }

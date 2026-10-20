@@ -95,6 +95,9 @@ $r->post('/flotte/demandes/{id}/annuler', [F\RequestController::class, 'cancel']
 $r->post('/flotte/demandes/{id}/evaluer', [F\RequestController::class, 'rate'], 'fleet');
 $r->get('/flotte/validations', [F\RequestController::class, 'validations'], 'fleet');
 $r->get('/flotte/registre', [F\RequestController::class, 'registry'], 'fleet_board');
+$r->get('/flotte/demandes/{id}/affecter', [F\AssignmentController::class, 'form'], 'fleet_manage');
+$r->post('/flotte/demandes/{id}/affecter', [F\AssignmentController::class, 'store'], 'fleet_manage');
+$r->get('/flotte/planning', [F\AssignmentController::class, 'planning'], 'fleet_board');
 $r->get('/flotte/vehicules', [F\VehicleController::class, 'index'], 'fleet_board');
 $r->post('/flotte/vehicules', [F\VehicleController::class, 'store'], 'fleet_manage');
 $r->get('/flotte/vehicules/{id}', [F\VehicleController::class, 'show'], 'fleet_board');

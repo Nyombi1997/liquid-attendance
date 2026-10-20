@@ -48,6 +48,7 @@ $nav = [
         ['/flotte/demandes', 'list', 'Mes demandes', ['/flotte/demandes'], 'fleet'],
         ['/flotte/validations', 'shield', 'À valider', ['/flotte/validations'], 'fleet_validate'],
         ['/flotte/registre', 'layers', 'Registre des demandes', ['/flotte/registre'], 'fleet_board'],
+        ['/flotte/planning', 'timeline', 'Planning', ['/flotte/planning'], 'fleet_board'],
         ['/flotte/vehicules', 'car', 'Véhicules', ['/flotte/vehicules', '/flotte/documents'], 'fleet_board'],
         ['/flotte/chauffeurs', 'id-card', 'Chauffeurs', ['/flotte/chauffeurs'], 'fleet_board'],
     ],

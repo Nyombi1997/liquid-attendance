@@ -296,6 +296,13 @@
     update();
   });
 
+  // Frises du parc automobile (affectation, planning) : positions calculées par
+  // le serveur en % (data-span-left / data-span-width), la CSP interdisant style=
+  $$('[data-span-left]').forEach((el) => {
+    el.style.left = `${Number(el.dataset.spanLeft)}%`;
+    el.style.width = `${Number(el.dataset.spanWidth)}%`;
+  });
+
   // Fichiers joints : taille maximale vérifiée avant l'envoi (data-max-bytes)
   $$('input[type="file"][data-max-bytes]').forEach((input) => {
     input.addEventListener('change', () => {
