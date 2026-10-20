@@ -279,6 +279,34 @@
     update();
   });
 
+  // Champ affiché selon une case ou un bouton radio :
+  //   case à cocher  data-toggle-target="id"                       → visible si cochée
+  //   bouton radio   data-toggle-target="id" data-toggle-show="v"  → visible si la valeur cochée est v
+  $$('[data-toggle-target]').forEach((input) => {
+    const target = document.getElementById(input.dataset.toggleTarget);
+    if (!target) return;
+    const group = input.type === 'radio' ? $$(`input[name="${input.name}"]`, input.form || document) : [input];
+    const update = () => {
+      const on = input.type === 'radio'
+        ? group.some((r) => r.checked && r.value === input.dataset.toggleShow)
+        : input.checked;
+      target.hidden = !on;
+    };
+    group.forEach((el) => el.addEventListener('change', update));
+    update();
+  });
+
+  // Fichiers joints : taille maximale vérifiée avant l'envoi (data-max-bytes)
+  $$('input[type="file"][data-max-bytes]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const max = Number(input.dataset.maxBytes);
+      const file = input.files && input.files[0];
+      const tooBig = file && file.size > max;
+      input.setCustomValidity(tooBig ? `Fichier trop lourd (${Math.round(max / 1048576)} Mo maximum).` : '');
+      if (tooBig) input.reportValidity();
+    });
+  });
+
   // Boutons « Copier » (e-mail, téléphone…) : data-copy="texte à copier"
   const copyText = async (text) => {
     try {

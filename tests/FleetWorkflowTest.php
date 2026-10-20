@@ -44,7 +44,7 @@ check('jours du calendrier', [W::days('2026-10-20 23:00:00','2026-10-21 01:00:00
 
 // --- Première étape -----------------------------------------------------------
 check('départ chez le N+1', W::start($req(['out_of_town'=>1]), true, $settings), ['step'=>'n1','status'=>'en_validation','direction_reasons'=>'mission hors ville']);
-check('sans N+1 : direction', W::start($req(), false, $settings), ['step'=>'direction','direction_reasons'=>'aucun N+1 désigné']);
+check('sans N+1 : direction', W::start($req(), false, $settings), ['step'=>'direction','direction_reasons'=>'aucun N+1 disponible']);
 $deps = [1=>['parent_id'=>null,'head_employee_id'=>100], 2=>['parent_id'=>1,'head_employee_id'=>200], 3=>['parent_id'=>2,'head_employee_id'=>null]];
 check('N+1 = responsable du service', W::resolveN1(2, 5, $deps), 200);
 check('service sans responsable : on remonte', W::resolveN1(3, 5, $deps), 200);

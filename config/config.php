@@ -20,6 +20,17 @@ return [
     'storage_path' => $env('STORAGE_PATH', dirname(__DIR__) . '/storage'),
     // Cookie de session réservé au HTTPS (désactivable pour un test local en HTTP)
     'session_secure' => $env('SESSION_SECURE', '1') !== '0',
+    // E-mails des notifications (Parc automobile), envoyés par le worker.
+    // Sans SMTP_HOST ni SMTP_FROM : aucun envoi, notifications dans l'application seulement.
+    'mail' => [
+        'host'      => $env('SMTP_HOST', ''),
+        'port'      => (int) $env('SMTP_PORT', '587'),
+        'secure'    => $env('SMTP_SECURE', 'tls'),   // tls (STARTTLS), ssl (port 465) ou none
+        'user'      => $env('SMTP_USER', ''),
+        'password'  => $env('SMTP_PASSWORD', ''),
+        'from'      => $env('SMTP_FROM', ''),
+        'from_name' => $env('SMTP_FROM_NAME', $env('APP_NAME', 'Liquid Présence')),
+    ],
     // Connexion : 5 échecs en 15 minutes bloquent le couple identifiant/IP
     'login_max_attempts'  => 5,
     'login_window_minutes'=> 15,

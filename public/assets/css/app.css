@@ -145,9 +145,10 @@ a.kpi:hover { text-decoration: none; box-shadow: 0 0 0 2px var(--primary-100), v
 .field > span, .field > legend { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0; }
 .field-grow { flex: 1; min-width: 200px; }
 .hint { color: var(--muted); font-size: 12px; font-weight: 400; }
-input[type=text], input[type=search], input[type=password], input[type=email], input[type=tel], input[type=date], input[type=time], input[type=number], input:not([type]), select {
+input[type=text], input[type=search], input[type=password], input[type=email], input[type=tel], input[type=date], input[type=datetime-local], input[type=time], input[type=number], input:not([type]), select {
   font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-ctl); padding: 0 10px; height: 38px; width: 100%; }
-input:focus, select:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
+textarea { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-ctl); padding: 8px 10px; width: 100%; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-100); }
 input[type=color] { width: 56px; height: 37px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--surface); }
 input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 16px; height: 16px; }
 .input-sm { max-width: 200px; height: 32px !important; }

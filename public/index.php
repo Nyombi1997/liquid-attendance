@@ -83,6 +83,18 @@ $r->post('/pointeuses', [A\DeviceController::class, 'store'], 'admin');
 $r->post('/pointeuses/{id}', [A\DeviceController::class, 'update'], 'admin');
 
 // Parc automobile (Fleet) : droits fleet_* (Auth), contrôles fins dans les contrôleurs
+$r->get('/flotte', [F\RequestController::class, 'index'], 'fleet');
+$r->get('/flotte/demandes', [F\RequestController::class, 'index'], 'fleet');
+$r->get('/flotte/demandes/nouvelle', [F\RequestController::class, 'create'], 'fleet');
+$r->post('/flotte/demandes', [F\RequestController::class, 'store'], 'fleet');
+$r->get('/flotte/demandes/{id}', [F\RequestController::class, 'show'], 'fleet');
+$r->get('/flotte/demandes/{id}/ordre', [F\RequestController::class, 'order'], 'fleet');
+$r->post('/flotte/demandes/{id}/valider', [F\RequestController::class, 'approve'], 'fleet');
+$r->post('/flotte/demandes/{id}/refuser', [F\RequestController::class, 'refuse'], 'fleet');
+$r->post('/flotte/demandes/{id}/annuler', [F\RequestController::class, 'cancel'], 'fleet');
+$r->post('/flotte/demandes/{id}/evaluer', [F\RequestController::class, 'rate'], 'fleet');
+$r->get('/flotte/validations', [F\RequestController::class, 'validations'], 'fleet');
+$r->get('/flotte/registre', [F\RequestController::class, 'registry'], 'fleet_board');
 $r->get('/flotte/vehicules', [F\VehicleController::class, 'index'], 'fleet_board');
 $r->post('/flotte/vehicules', [F\VehicleController::class, 'store'], 'fleet_manage');
 $r->get('/flotte/vehicules/{id}', [F\VehicleController::class, 'show'], 'fleet_board');

@@ -6,9 +6,10 @@ use App\Core\Config;
 
 $user = Auth::user();
 $path = rtrim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/') ?: '/';
+// Préfixe d'adresse de l'entrée active ; « /flotte$ » : adresse exacte
 $active = static function (string ...$prefixes) use ($path): string {
     foreach ($prefixes as $p) {
-        if ($p === '/' ? $path === '/' : str_starts_with($path, $p)) {
+        if ($p === '/' || str_ends_with($p, '$') ? $path === rtrim($p, '$') : str_starts_with($path, $p)) {
             return ' is-active';
         }
     }
@@ -44,6 +45,9 @@ $nav = [
     ],
     // Parc automobile : chaque entrée selon le droit de sa route (comptes « employé » compris)
     'Parc automobile' => [
+        ['/flotte/demandes', 'list', 'Mes demandes', ['/flotte/demandes'], 'fleet'],
+        ['/flotte/validations', 'shield', 'À valider', ['/flotte/validations'], 'fleet_validate'],
+        ['/flotte/registre', 'layers', 'Registre des demandes', ['/flotte/registre'], 'fleet_board'],
         ['/flotte/vehicules', 'car', 'Véhicules', ['/flotte/vehicules', '/flotte/documents'], 'fleet_board'],
         ['/flotte/chauffeurs', 'id-card', 'Chauffeurs', ['/flotte/chauffeurs'], 'fleet_board'],
     ],

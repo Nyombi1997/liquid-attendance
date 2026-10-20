@@ -127,7 +127,7 @@ final class FleetWorkflow
     {
         $reasons = self::directionReasons($req, $settings);
         if (!$hasN1) {
-            $reasons[] = 'aucun N+1 désigné';
+            $reasons[] = 'aucun N+1 disponible';
         }
         return [
             'status'            => 'en_validation',
