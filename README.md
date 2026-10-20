@@ -5,7 +5,7 @@ Plateforme web interne avec une connexion commune et trois modules :
 | Module | État |
 |---|---|
 | **Présence** (pointeuses ZKTeco) | Disponible |
-| Parc automobile | Prévu (priorité 2) |
+| **Parc automobile** | Module 1 « Demande et octroi de véhicule » disponible ; GPS, alertes de mouvement et carburant à venir |
 | Congés | Prévu (priorité 3) |
 
 Stack : PHP 8.3 en MVC sans framework, MariaDB 11, phpMyAdmin, Docker Compose. Application installable sur téléphone (PWA). Interface en français.
@@ -35,7 +35,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Tableau de bord** : indicateurs du jour et deux **camemberts en pourcentage**, mis à jour en direct : présents / absents (agents attendus) et à l'heure / en retard (agents arrivés). Un clic sur « Présents aujourd'hui » ouvre la présence filtrée sur les agents venus.
 - **Filtres appliqués aussitôt** (Présence, Calendrier, Employés, Accès aux salles) : pas de bouton « Filtrer » ; une liste ou une date s'applique dès qu'elle change, la recherche à l'Entrée, à la sortie du champ ou au choix d'une proposition. Filtre **« Présents (même sortis) »** : tous les agents qui ont badgé une entrée ce jour-là (Présence → Statut, Calendrier → Présence).
 - **Calendrier** (`/calendrier`, Administrateur, RH et managers pour leur département) : une ligne par agent. Vue **Jour** façon planning (colonnes des heures « 00h » à « 23h », barre de l'arrivée au départ sur fond de l'horaire prévu, trait de l'heure actuelle) ; vues **Semaine** et **Mois** (une case par jour, total de la période). Le temps passé au bureau avance **en direct** pour les agents présents ; les raisons d'absence saisies (télétravail, mission, congé, avec date de fin et note) s'affichent sur leurs jours, y compris passés (historique `work_statuses`) ; un agent **absent sans raison est en rouge**. Retard signalé en orange, départ non badgé en barre estompée.
-- **Notifications** : cloche en haut à droite sur toutes les pages, avec le nombre de badges du jour non lus (« 9+ » au-delà de 9). Un clic ouvre la liste des derniers badges (lien vers la fiche de l'agent) et les marque comme lus ; « Tout marquer comme lu » remet le compteur à zéro. Badges limités au périmètre de l'utilisateur (`/api/notifications`, toutes les 15 s) ; dernier badge lu mémorisé dans le navigateur.
+- **Notifications** : cloche en haut à droite sur toutes les pages (avec, au-dessus, les messages du parc automobile), avec le nombre de badges du jour non lus (« 9+ » au-delà de 9). Un clic ouvre la liste des derniers badges (lien vers la fiche de l'agent) et les marque comme lus ; « Tout marquer comme lu » remet le compteur à zéro. Badges limités au périmètre de l'utilisateur (`/api/notifications`, toutes les 15 s) ; dernier badge lu mémorisé dans le navigateur.
 - **Statut de travail** : « au bureau » s'affiche automatiquement au premier badge d'entrée ; les RH et l'administrateur peuvent saisir la disponibilité (télétravail, mission, congé ou bureau) jusqu'à une date, puis revenir à l'automatique ; c'est la seule modification ouverte aux RH. Un statut saisi l'emporte sur le badge jusqu'à sa date de fin. Chaque saisie est conservée avec sa période (table `work_statuses`) pour le calendrier.
 - **Désactivation d'un agent** : case « Agent actif » dans « Modifier la fiche » (page Agents, administrateur) ou « Modifier l'employé ». Un agent désactivé n'est plus calculé ni affiché (Agents, tableau de bord, calendrier, cloche, derniers badges) ; son historique est conservé et il se réactive depuis Employés → filtre « Inactifs ».
 - **Départements** (`/departements`) : arborescence (un département peut avoir des sous-départements), affectation des agents depuis la carte, la fiche employé ou en lot depuis la liste des employés.
@@ -54,6 +54,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 | Direction (CEO) | Toutes les pages de consultation (sauf le calendrier), tous les départements, **aucune modification** | Agents |
 | Manager de département | Agents, tableau de bord, présence **du jour**, Calendrier et Employés (consultation), pour son département et ses sous-départements uniquement. Ni sorties manquantes ni modules | Agents |
 | Lecteur | Consultation et export, sans modification | Tableau de bord |
+| Employé | **Parc automobile seulement** : ses demandes de véhicule et, pour un chauffeur, ses missions. Compte relié à une fiche employé | Parc automobile (Mes missions pour un chauffeur) |
 
 Le département d'un manager se choisit dans **Administration > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, fiches, photos, calendrier, `/api/direct` et `/api/notifications`).
 
@@ -99,6 +100,41 @@ L'application reste toujours en **thème clair**, même quand le téléphone est
 
 ---
 
+## Ce que fait le module Parc automobile (module 1 : demande et octroi de véhicule)
+
+Cahier des charges : [`docs/Cahier_des_charges_Fleet.pdf`](docs/Cahier_des_charges_Fleet.pdf) (sections 2, 3 et 7). Aucun véhicule ne sort sans demande validée et affectée.
+
+- **Organisation** (Administration › Départements) : chaque département est une **direction** ou un **service**, avec un **responsable (N+1)** choisi parmi les employés. Les employés sont rattachés à leur service (fiche, carte ou action groupée de la liste des employés).
+- **Comptes** (Administration › Utilisateurs) : un compte peut être **relié à une fiche employé** (obligatoire pour demander un véhicule) et reçoit un **rôle Parc automobile**. Le rôle de base **« Employé »** donne accès au seul Parc automobile (demandeurs et chauffeurs sans accès à la présence).
+- **Demande** (`/flotte/demandes/nouvelle`, web et téléphone) : motif, destination, mission hors ville, départ et retour, passagers, chauffeur souhaité ou « je conduis », type de véhicule, **ordre de mission** (PDF ou image, 5 Mo au plus, stocké hors du dossier public ; obligatoire selon le paramètre), urgence motivée. Le demandeur suit le statut, voit les étapes et l'historique, **annule** tant que la mission n'a pas commencé et **évalue la course** (ponctualité, conduite, commentaire).
+- **Circuit de validation** : le **N+1** (responsable du service ; si le demandeur est lui-même responsable ou si personne n'est désigné, on remonte l'arborescence) valide d'abord ; la **direction** valide ensuite si la mission est **hors ville**, dure **plus de 2 jours** ou touche un **week-end** (seuils dans Parc automobile › Paramètres). Sans N+1, la demande va directement à la direction. **Refus avec motif obligatoire**, renvoyé au demandeur. Personne ne valide sa propre demande. Page **À valider** pour les validateurs.
+- **Demande urgente** : le gestionnaire peut **affecter avant la fin de la validation** ; la validation se fait **a posteriori** et reste tracée (filtre « Urgences à régulariser »). Un refus a posteriori libère le véhicule si la mission n'a pas commencé.
+- **Affectation** (gestionnaire de flotte) : frise des **véhicules et des chauffeurs** sur la période de la demande (réservations existantes, créneau demandé), avec les **conflits** et indisponibilités : véhicule en panne ou en entretien, assurance ou contrôle technique expiré, permis expiré, chauffeur non autorisé sur le véhicule (bloquant) ; places, catégorie de permis, document expirant pendant la mission (avertissement). L'enregistrement se fait **en transaction, avec verrou** sur la demande, le véhicule et le chauffeur : deux affectations simultanées du même véhicule ne peuvent pas réussir. **Planning** jour / semaine du parc.
+- **Mission** (`/flotte/missions`, écran pour téléphone) : le chauffeur (ou le demandeur qui conduit) **démarre** puis **clôture** la mission avec le **kilométrage**, le **niveau de carburant**, la **photo du compteur** (réduite dans le téléphone) et l'**état du véhicule**. Le kilométrage de retour doit être supérieur à celui du départ. Un véhicule déclaré en panne à la clôture passe « en panne » et les gestionnaires sont prévenus.
+- **Sans réseau** : la saisie de démarrage ou de clôture est **gardée dans le téléphone** (IndexedDB) puis envoyée dans l'ordre **dès le retour du réseau** (avec l'heure réelle de la saisie ; un double envoi est ignoré). L'écran de mission déjà ouvert une fois reste consultable hors réseau (service worker). Une pastille dans l'en-tête indique les saisies en attente.
+- **Référentiels** : **véhicules** (immatriculation, marque, modèle, année, type, places, carburant, réservoir, consommation de référence en L/100 km, kilométrage, état, identifiant du tracker GPS pour le module 2), **documents** (assurance, contrôle technique : date d'expiration, fichier, **alerte 30 jours avant**), **chauffeurs** (employé, permis, catégories, expiration avec alerte, véhicules autorisés, note moyenne).
+- **Notifications** : dans la **cloche** de l'en-tête (au-dessus des badges du jour) et **par e-mail** si un serveur SMTP est configuré dans `.env` (sinon rien n'est envoyé) : demande reçue, approuvée, refusée, véhicule affecté, **rappel 1 h avant le départ**, mission terminée, panne, documents et permis à renouveler. Les e-mails, rappels et alertes sont envoyés par le worker (`bin/fleet-tasks.php`, toutes les 60 s).
+- **Historique complet** de chaque demande (qui a fait quoi et quand), en plus du journal d'activité.
+- **Tableau de bord** (`/flotte`) : véhicules disponibles, en mission, en panne, en entretien ; demandes en attente par étape ; **délais moyens création → validation → affectation** (90 jours) ; départs du jour ; documents et permis à renouveler ; kilomètres et note du mois.
+
+### Rôles du parc automobile
+
+Ils s'ajoutent au rôle de la plateforme (champ « Rôle Parc automobile » du compte).
+
+| Rôle Parc automobile | Ce qu'il peut faire |
+|---|---|
+| Demandeur (par défaut) | Créer une demande, la suivre, l'annuler, évaluer la course (compte relié à une fiche employé) |
+| Validateur (N+1) | Valider ou refuser les demandes de son équipe ; tout responsable désigné dans Départements valide aussi, quel que soit son rôle |
+| Gestionnaire de flotte | Affecter véhicule et chauffeur, gérer véhicules, documents et chauffeurs, tableau de bord, registre, planning |
+| Chauffeur | Voir ses missions, les démarrer et les clôturer (téléphone, avec ou sans réseau) |
+| Direction | Valider les demandes exceptionnelles (hors ville, longues, week-end, sans N+1), tableau de bord, registre et planning en consultation |
+
+L'**administrateur** a les droits du gestionnaire et règle les **paramètres** du circuit ; le **CEO** consulte le tableau de bord, le registre, le planning, les véhicules et les chauffeurs.
+
+Les règles du circuit et des conflits sont dans `app/Modules/Fleet/Services/FleetWorkflow.php` et `Availability.php`, testées sans base par `php tests/FleetWorkflowTest.php`. Données d'exemple (comptes, véhicules, demandes à tous les stades) : `database/seed_fleet_demo.sql`, **à ne jamais charger en production**.
+
+---
+
 ## Installation sur la VM (10.169.153.144)
 
 La plateforme cohabite avec ELK sans réutiliser aucun de ses ports :
@@ -120,6 +156,8 @@ cp .env.example .env
 openssl rand -base64 24   # à lancer deux fois : un mot de passe pour DB_PASSWORD, un pour DB_ROOT_PASSWORD
 nano .env
 ```
+
+Pour les e-mails du parc automobile, renseigner aussi `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` et `SMTP_FROM` (laisser `SMTP_HOST` vide : notifications dans l'application seulement). La VM doit pouvoir joindre ce serveur (port 587 ou 465 en sortie).
 
 ### 2. Démarrer
 
@@ -176,6 +214,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 |---|---|
 | Accéder à phpMyAdmin | depuis ton poste : `ssh -L 8090:127.0.0.1:8090 ubuntu01@10.169.153.144`, puis http://localhost:8090 |
 | Voir la synchronisation | `sudo docker compose logs -f worker` |
+| Tâches du parc automobile (rappels, alertes, e-mails) à la main | `sudo docker compose exec worker php bin/fleet-tasks.php` (lancé seul toutes les 60 s par le worker) |
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
 | Mettre à jour | `git pull`, appliquer les migrations nouvelles (ci-dessous), puis `sudo docker compose up -d --build` |
 | Réinitialiser un mot de passe admin | `sudo docker compose exec -it app php bin/create-admin.php <identifiant>` |
@@ -190,6 +229,7 @@ sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" 
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/002_agents.sql
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/003_identifiants.sql
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/004_calendrier.sql
+sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/005_flotte.sql
 ```
 
 Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
@@ -200,8 +240,9 @@ Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`,
 | `002_agents.sql` | Page Agents : table `departments`, rôles `ceo` et `manager` + `users.department_id`, colonnes `employees.job_title`, `department_id`, `photo_updated_at`, `work_status*` |
 | `003_identifiants.sql` | Identifiants insensibles à la casse : comptes existants passés en minuscules, collation `utf8mb4_unicode_ci` sur `users.username` |
 | `004_calendrier.sql` | Calendrier : table `work_statuses` (historique des disponibilités avec leur période), reprise des statuts en cours |
+| `005_flotte.sql` | Parc automobile : `departments.kind` et `head_employee_id` (N+1), rôle `employe`, `users.employee_id` et `fleet_role`, tables `notifications`, `fleet_vehicles`, `fleet_vehicle_documents`, `fleet_drivers`, `fleet_driver_vehicles`, `fleet_requests`, `fleet_request_events`, `fleet_missions`, `fleet_ratings`, paramètres `fleet_*` |
 
-Les photos des agents sont enregistrées dans `./data/storage/photos` (volume monté dans le conteneur `app`, hors du dossier public) : elles sont conservées lors des mises à jour et incluses dans la sauvegarde de `./data`.
+Les photos des agents sont enregistrées dans `./data/storage/photos` et les fichiers du parc automobile (ordres de mission, documents des véhicules, photos des compteurs) dans `./data/storage/fleet` (volume monté dans le conteneur `app`, hors du dossier public) : ils sont conservés lors des mises à jour et inclus dans la sauvegarde de `./data`.
 
 ### Sauvegarde de la base
 
@@ -221,29 +262,38 @@ sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSW
 app/
   Core/                    noyau MVC : routeur, base, vues, authentification, CSRF, journal
   Modules/
-    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments), modules à venir
+    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments),
+                           notifications des comptes (Services/Notifications), modules à venir
     Attendance/            module Présence
       Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), CalendarController, LiveController (/api/direct, /api/notifications)
       Services/            DayCalculator (règles), ScheduleResolver, AttendanceComputer, DashboardStats (indicateurs), AgentStatus (pastilles des cartes),
                            AgentPhoto (photos), WorkStatuses (historique des disponibilités), Calendar (cases du calendrier)
       Views/
+    Fleet/                 module Parc automobile
+      Controllers/         Dashboard, Request (demandes, validation, registre), Assignment (affectation, planning),
+                           Mission (écran chauffeur), Vehicle, Driver, Settings
+      Services/            FleetWorkflow (circuit, testé), Availability (conflits, testé), Timeline (frise), Fleet (données, droits),
+                           FleetNotify (destinataires), FleetFiles (fichiers hors de public/), FleetStats (tableau de bord)
+      Views/
+  Core/Mailer.php          envoi SMTP sans dépendance (utilisé par le worker)
   Views/                   gabarit commun, pages d'erreur
-bin/                       compute.php (calcul), create-admin.php
+bin/                       compute.php (calcul), fleet-tasks.php (rappels, alertes, e-mails du parc), create-admin.php
 config/config.php          configuration lue depuis .env
-database/                  schema.sql, seed.sql (chargés au premier démarrage), migrations/
+database/                  schema.sql, seed.sql (chargés au premier démarrage), migrations/, seed_fleet_demo.sql (démonstration, jamais en production)
 docker/                    images app (Apache + HTTPS) et worker
 public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes), assets/vendor/fontawesome (Font Awesome Free 6.7.2, servi localement)
 storage/                   fichiers déposés (photos) ; en production : volume ./data/storage
 worker/                    sync.py (connexion permanente aux pointeuses, calculs), run.sh (lancement)
-tests/                     règles de calcul et cases du calendrier (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
+tests/                     règles de calcul, cases du calendrier, circuit du parc automobile (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
 
-Chaque futur module (Fleet, Leave) aura son dossier dans `app/Modules/` et réutilisera la table `employees`, les comptes et le gabarit.
+Le module Leave aura son dossier dans `app/Modules/` et réutilisera, comme Fleet, la table `employees`, les comptes et le gabarit.
 
 ### Sécurité
 
 - HTTPS uniquement (port 8443), en-têtes HSTS et CSP stricte (aucun script ni style externe : Font Awesome est servi depuis `public/assets/vendor`).
 - Photos hors du dossier public, servies par `/agents/{id}/photo` après contrôle du rôle et du département ; seuls des JPEG carrés de 128 à 1024 px et 1,5 Mo au plus sont acceptés.
+- Parc automobile : ordres de mission et documents (PDF, JPEG, PNG, WebP contrôlés par leur contenu, 5 Mo au plus) et photos des compteurs (JPEG, 2 Mo) hors du dossier public, servis après contrôle des droits sur la demande ; PDF toujours téléchargés, jamais affichés dans la page. Transitions d'une demande verrouillées en base (pas de double validation ni de double réservation).
 - Mots de passe hachés, 12 caractères minimum, 5 échecs en 15 minutes bloquent la connexion.
 - Jeton CSRF sur chaque formulaire, cookie de session `Secure`, `HttpOnly`, `SameSite=Strict`.
 - Rôles vérifiés côté serveur sur chaque route, périmètre des managers appliqué à chaque requête, journal de toutes les modifications.

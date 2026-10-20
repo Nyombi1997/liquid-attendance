@@ -4,7 +4,7 @@
 
 ## Le projet en bref
 
-Plateforme web interne (présence via pointeuses ZKTeco, puis parc automobile et congés).
+Plateforme web interne (présence via pointeuses ZKTeco, parc automobile — module 1 livré —, puis congés).
 PHP 8.3 en MVC **sans framework**, MariaDB 11, Docker Compose, PWA. Worker Python (`worker/sync.py`) relié aux pointeuses.
 **Interface, code commenté, messages et commits en français.**
 
@@ -12,16 +12,17 @@ PHP 8.3 en MVC **sans framework**, MariaDB 11, Docker Compose, PWA. Worker Pytho
 app/Core/                    routeur, base, vues, Auth (rôles), CSRF, Audit, helpers.php
 app/Modules/Platform/        connexion, profil, utilisateurs, départements (Services/Departments.php)
 app/Modules/Attendance/      présence : Controllers/, Services/, Views/
+app/Modules/Fleet/           parc automobile : Controllers/, Services/, Views/
 public/index.php             toutes les routes
 public/assets/               app.css (feuille unique), app.js (sans dépendance), icons.svg, vendor/fontawesome
 database/schema.sql          installation neuve ; database/migrations/NNN_*.sql pour les bases existantes
-storage/                     fichiers déposés (photos) ; en production volume ./data/storage
+storage/                     fichiers déposés (photos, fleet/…) ; en production volume ./data/storage
 ```
 
 ## Règles à respecter
 
 ### Rôles, droits et périmètre
-- Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`. Libellés dans `Auth::ROLES`.
+- Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`, `employe` (parc automobile seulement). Libellés dans `Auth::ROLES`. Rôle Parc automobile (`users.fleet_role`) : `demandeur`, `validateur`, `gestionnaire`, `chauffeur`, `direction` (`Auth::FLEET_ROLES`).
 - Droits vérifiés par le routeur (3e argument de `$r->get/post`) :
   - `board` : page Agents, tableau de bord, pointages (`/pointages`), `/api/direct`, `/api/notifications`, `/api/suggestions`, profil — **tous les rôles** ;
   - `presence` : présence du jour — tous sauf `rh` ;
@@ -31,7 +32,9 @@ storage/                     fichiers déposés (photos) ; en production volume 
   - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
   - `export` : rapport Excel de la page Agents (`/agents/export`) — `admin`, `rh` ;
   - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
-  - `admin` : comptes, pointeuses, journal.
+  - `admin` : comptes, pointeuses, journal, paramètres du parc automobile ;
+  - `account` : profil, déconnexion, cloche (`/api/notifications`) — tous les comptes, `employe` compris ;
+  - parc automobile (rôle de la plateforme **ou** `fleet:<fleet_role>` dans `Auth::ABILITIES`) : `fleet` (tous), `fleet_validate`, `fleet_drive`, `fleet_board`, `fleet_manage`. Les droits fins sur une demande (demandeur, validateur de l'étape, chauffeur, gestionnaire) viennent de `Fleet::access()` : toute nouvelle page ou action sur une demande doit l'appeler.
 - **CEO** : tout voir (sauf le calendrier), ne rien modifier. **Manager** : uniquement son département et ses sous-départements (Agents, tableau de bord, présence du jour, Calendrier, Employés). **RH** : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture.
 - RH et managers ne voient **rien** de ce qui demande `view` (sorties manquantes, accès, horaires, modules…) : pas de lien, pas de carte. « Sortie manquante » leur est affiché « Présent » / « Retard » : passer les minutes de retard à `status_badge($status, $late)` / `status_info()`.
 - **Toute requête qui lit des agents, des journées ou des pointages et qui est accessible à un manager doit appliquer le périmètre** :
@@ -40,6 +43,15 @@ storage/                     fichiers déposés (photos) ; en production volume 
 - Le menu de `layout.php` liste chaque entrée avec son droit (5e élément) : ajouter une page = ajouter l'entrée avec le même droit que sa route.
 - Identifiants : toujours passer par `Auth::normalizeUsername()` (minuscules) avant d'enregistrer ou de comparer.
 - Accueil après connexion : `Auth::home()` (`/agents` pour `ceo` et `manager`, `/` sinon). Le menu de `app/Views/layout.php` dépend du rôle.
+
+### Parc automobile (`app/Modules/Fleet`)
+- **Règles dans les services purs** `FleetWorkflow` (circuit) et `Availability` (conflits) : les contrôleurs lisent la demande, appellent la règle, enregistrent les champs renvoyés. Toute nouvelle règle y va, avec son test dans `tests/FleetWorkflowTest.php`. Pas de règle métier en JavaScript.
+- **Transitions** d'une demande dans une transaction, ligne verrouillée (`SELECT … FOR UPDATE`, voir `RequestController::transition()`) ; affectation : verrous demande → véhicule → chauffeur, dans cet ordre, contrôles refaits sous verrou.
+- Chaque étape : `Fleet::event()` (historique de la demande) **et** `Audit::log()` ; notification par `FleetNotify` (jamais d'e-mail envoyé pendant la requête : file `notifications`, envoi par `bin/fleet-tasks.php` dans le worker).
+- Fichiers (ordres de mission, documents, photos des compteurs) : `FleetFiles` (contrôle du contenu, 5 Mo, hors de `public/`), servis par un contrôleur après `Fleet::access()` ; PDF toujours en téléchargement.
+- Écran mission : formulaires `data-offline-form` traités par `app.js` (file IndexedDB `liquid-offline`, `client_id` unique, `recorded_at`) ; le contrôleur répond en JSON si `Accept: application/json` et accepte un `client_id` déjà reçu sans rien refaire.
+- Frises (affectation, planning) : positions en % calculées par `Timeline`, écrites en `data-span-left` / `data-span-width` (CSP : pas de `style=`).
+- Un validateur ne valide jamais sa propre demande ; un refus exige un motif.
 
 ### Composants automatiques (app.js)
 - Formulaire de filtres : `<form class="filters card" method="get" data-auto-filter>` sans bouton « Filtrer » ; listes et dates appliquées à chaque changement, recherche à l'Entrée ou à la sortie du champ.
@@ -97,6 +109,7 @@ for f in $(git ls-files '*.php') ; do php -l "$f" | grep -v '^No syntax'; done  
 node --check public/assets/js/app.js                                           # syntaxe JS
 php tests/DayCalculatorTest.php                                               # règles de calcul
 php tests/CalendarTest.php                                                    # cases du calendrier
+php tests/FleetWorkflowTest.php                                               # circuit et conflits du parc
 python3 tests/test_sync.py                                                    # worker (faux module zk)
 ```
 
@@ -112,7 +125,7 @@ DB_HOST=127.0.0.1 DB_PORT=33099 DB_NAME=la DB_USER=root DB_PASSWORD=test SESSION
 docker stop la-test-db
 ```
 
-- Tester chaque rôle concerné (au moins `admin`, `rh`, `ceo`, `manager`) : codes HTTP attendus (200 / 403), périmètre du manager dans la page **et** dans `/api/direct`.
+- Tester chaque rôle concerné (au moins `admin`, `rh`, `ceo`, `manager`) : codes HTTP attendus (200 / 403), périmètre du manager dans la page **et** dans `/api/direct`. Parc automobile : charger `database/seed_fleet_demo.sql` (base de test seulement) et tester avec ses comptes (gestionnaire, validateur, direction, demandeur, chauffeur ; mot de passe `demo-flotte-2026`).
 - Pour une migration : l'appliquer sur une base créée avec l'ancien `schema.sql` (`git show HEAD:database/schema.sql`), deux fois de suite.
 - Tout fichier temporaire va dans le dossier de travail temporaire, jamais dans le dépôt.
 

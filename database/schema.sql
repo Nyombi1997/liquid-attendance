@@ -32,13 +32,14 @@ CREATE TABLE users (
   password_hash VARCHAR(255) NOT NULL,
   role          ENUM('admin','rh','ceo','manager','lecteur','employe') NOT NULL DEFAULT 'lecteur',
   department_id INT UNSIGNED NULL COMMENT 'département du manager',
-  employee_id   INT UNSIGNED NULL UNIQUE COMMENT 'fiche employé du titulaire du compte',
+  employee_id   INT UNSIGNED NULL COMMENT 'fiche employé du titulaire du compte',
   fleet_role    ENUM('demandeur','validateur','gestionnaire','chauffeur','direction') NOT NULL DEFAULT 'demandeur'
                 COMMENT 'rôle dans le module Parc automobile',
   active        TINYINT(1)   NOT NULL DEFAULT 1,
   last_login_at DATETIME     NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_employee (employee_id),
   CONSTRAINT fk_user_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 

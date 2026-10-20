@@ -1,6 +1,6 @@
 # Cadrage — Plateforme interne (Attendance, Fleet, Leave)
 
-Mis à jour le 12 octobre 2026 · @Beni
+Mis à jour le 20 octobre 2026 · @Beni
 
 ## Comment utiliser ce document
 
@@ -24,7 +24,8 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | NAT 8443 et 80 + certificat Let's Encrypt | À faire après le déploiement (README, étapes 4 et 5) |
 | Sécuriser Kibana (liste d'IP ou login) | À faire |
-| Module Parc automobile | Priorité 2 |
+| Parc automobile, module 1 « Demande et octroi de véhicule » : directions/services et N+1, rôle `employe` et rôles Parc automobile, véhicules (documents avec alerte 30 j), chauffeurs, demandes avec ordre de mission, circuit N+1 → direction, refus motivé, urgence validée a posteriori, affectation avec frise et verrou anti-double réservation, planning, écran mission sur téléphone avec saisie hors réseau, cloche + e-mails + rappel 1 h avant, évaluation, historique, tableau de bord | **Fait** le 20 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px, hors réseau simulé, faux SMTP) ; migration `005_flotte.sql` à appliquer sur la VM ; SMTP à configurer dans `.env` |
+| Parc automobile, modules 2 à 4 (GPS, alertes de mouvement, carburant) | À faire : trackers à choisir ; colonnes déjà prévues (`fleet_vehicles.tracker_id`, `ref_consumption`, `tank_liters`) |
 | Module Congés | Priorité 3 |
 
 ---
@@ -111,7 +112,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Module | Rôle | Priorité |
 |---|---|---|
 | Attendance (Présence) | Entrées et sorties à partir des ZKTeco, tendances | 1 — base livrée |
-| Vehicle Fleet & Allocation | Parc de véhicules et attributions | 2 |
+| Vehicle Fleet & Allocation | Demandes et octroi de véhicule (module 1 livré), puis GPS, alertes, carburant | 2 |
 | Leave (Congés) | Demandes et suivi des congés | 3 |
 
 ### Stack retenue
@@ -122,6 +123,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Front-end | HTML, CSS, JavaScript sans dépendance externe ; PWA installable |
 | Base | **MariaDB 11.4** + **phpMyAdmin** |
 | Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min). Calcul en PHP (mêmes règles que l'application) : journée de l'agent recalculée après chaque badge de présence (un appel au plus toutes les 5 s pour tous les agents en attente), et calcul global toutes les 5 min dans un thread à part. Horloges remises à l'heure de la VM chaque nuit à 03:00 |
+| Parc automobile | Module `app/Modules/Fleet`, même socle (connexion, gabarit, CSP, audit). Pas d'application native : la PWA sert aux demandeurs et aux chauffeurs (écrans pour téléphone, saisie hors réseau de la mission dans IndexedDB, envoi au retour du réseau). Tâches planifiées (rappels, alertes d'expiration, e-mails) dans le worker : `bin/fleet-tasks.php` toutes les 60 s. E-mails par SMTP (`.env`), sans envoi si non configuré |
 | Mode direct | API JSON `GET /api/direct` interrogée toutes les 5 s par les pages ouvertes (60 s onglet caché) : nouveaux pointages, journées modifiées, indicateurs, état des pointeuses. Mise à jour de la page sans rechargement. Notifications : cloche en haut à droite (badges du jour non lus, « 9+ »), `GET /api/notifications` toutes les 15 s sur toutes les pages |
 | Cache navigateur | Fichiers statiques versionnés par date de modification (`asset()`, `?v=`), cache d'un an ; service worker sans numéro de version à modifier |
 | Serveur | Docker Compose sur la VM, projet `liquid-attendance`, réseau Docker séparé d'ELK |
@@ -139,7 +141,16 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 - **Horaires** : saisis manuellement. Attribuables à tout le monde (horaire par défaut), à un groupe ou à un ou plusieurs agents, sur une période. Priorité agent > groupe > défaut. Horaires de nuit gérés.
 - Paramètres d'un horaire : début, fin, jours travaillés, pause déduite, tolérance de retard, seuil des heures supplémentaires.
 - **NOC et IT Room** : accès salle, historique séparé, non comptés dans la présence.
-- **Rôles** (révisés le 12 oct. 2026) : Administrateur (tout, seul à modifier fiches, employés, départements, groupes, horaires, corrections), RH (tableau de bord, Agents avec mise à jour de la disponibilité uniquement et rapport Excel, Calendrier, Employés en consultation), Direction/CEO (tout voir sauf le calendrier, rien modifier), Manager (son département : Agents, tableau de bord, présence du jour, Calendrier, Employés), Lecteur (consultation et export). RH et managers ne voient ni les sorties manquantes ni les modules.
+- **Rôles** (révisés le 12 oct. 2026) : Administrateur (tout, seul à modifier fiches, employés, départements, groupes, horaires, corrections), RH (tableau de bord, Agents avec mise à jour de la disponibilité uniquement et rapport Excel, Calendrier, Employés en consultation), Direction/CEO (tout voir sauf le calendrier, rien modifier), Manager (son département : Agents, tableau de bord, présence du jour, Calendrier, Employés), Lecteur (consultation et export), Employé (ajouté le 20 oct. 2026 : parc automobile seulement). RH et managers ne voient ni les sorties manquantes ni les rubriques de consultation ; tous les comptes ont accès au parc automobile selon leur rôle Parc automobile.
+- **Parc automobile** (décidé le 20 oct. 2026, cahier des charges `docs/Cahier_des_charges_Fleet.pdf`) :
+  - pas d'applications natives Android/iOS : PWA existante, écrans adaptés au téléphone, saisie hors réseau du démarrage et de la clôture de mission ;
+  - interface en français, anglais plus tard ;
+  - organisation : départements = directions ou services, un responsable (N+1) par département, chaque employé rattaché à son service ; un compte peut être relié à une fiche employé ; rôle de base `employe` pour les comptes qui n'utilisent que le parc ;
+  - rôles Parc automobile (en plus du rôle de la plateforme) : demandeur, validateur, gestionnaire de flotte, chauffeur, direction ; administrateur = gestionnaire + paramètres ;
+  - circuit : N+1 puis direction si hors ville, plus de 2 jours ou week-end (seuils modifiables : Parc automobile › Paramètres) ; sans N+1, la direction directement ; refus motivé ; personne ne valide sa propre demande ; urgence : affectation avant validation, validation a posteriori tracée ;
+  - ordre de mission joint (PDF ou image, 5 Mo) obligatoire pour les missions hors ville (paramètre) ; fichiers hors du dossier public ;
+  - affectation bloquée en cas de conflit, de panne ou d'entretien, d'assurance, de contrôle technique ou de permis expiré, de chauffeur non autorisé ;
+  - hors périmètre du module 1 : GPS, alertes de mouvement, carburant (seules les colonnes qui en dépendront sont prévues).
 - **Identifiants** : insensibles à la casse, enregistrés en minuscules (le mot de passe, lui, reste sensible à la casse).
 - Horaire par défaut provisoire : 08:00–17:00, lundi–vendredi, pause 60 min, tolérance 15 min, heures sup au-delà de 30 min. **À ajuster.**
 
@@ -162,3 +173,4 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 - Horaires réels à saisir, et groupes à créer (étages, NOC, équipes).
 - Faut-il intégrer l'historique antérieur à 2026 ? (réglage `history_start_date`, puis recalcul)
 - Logo officiel à fournir pour remplacer le logo provisoire (`public/assets/img/`).
+- Parc automobile : nombre de véhicules et de sites ; trackers GPS installés ou à acheter (protocole, API) ; serveur SMTP à utiliser pour les e-mails (et ouverture du port 587 ou 465 en sortie de la VM) ; SMS optionnel ; budget et date de mise en service ; liste des responsables (N+1) et des membres de la direction à saisir.

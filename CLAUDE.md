@@ -6,7 +6,7 @@ Lu automatiquement à chaque session. Source de vérité détaillée : `docs/CAD
 
 Plateforme interne « Liquid Présence » : une connexion commune, trois modules partageant la même table `employees`.
 - **Attendance (Présence)** : en production. Lit les pointeuses ZKTeco, calcule les journées.
-- **Fleet (parc automobile)** : priorité 2, pas commencé.
+- **Fleet (parc automobile)** : module 1 « Demande et octroi de véhicule » livré (20 oct. 2026) ; modules 2 à 4 (GPS, alertes de mouvement, carburant) à venir. Cahier des charges : `docs/Cahier_des_charges_Fleet.pdf`.
 - **Leave (congés)** : priorité 3, pas commencé.
 
 Stack : PHP 8.3 MVC maison (sans framework ni Composer), MariaDB 11.4, phpMyAdmin, worker Python (pyzk) + PHP, Docker Compose, PWA. Dépôt : github.com/Nyombi1997/liquid-attendance.
@@ -22,7 +22,7 @@ Stack : PHP 8.3 MVC maison (sans framework ni Composer), MariaDB 11.4, phpMyAdmi
 
 Conteneurs (projet compose « liquid-attendance », réseau liquid-attendance-net, séparé d'ELK) : la-app (Apache+PHP, HTTPS 8443), la-worker (synchronisation + calcul), la-db (MariaDB, aucun port publié), la-phpmyadmin, la-acme (certificat Let's Encrypt, port 8088).
 
-Volumes (dans `./data`, jamais dans git) : `data/mariadb` (base), `data/certs` (certificat), `data/acme`, `data/storage` (photos des agents, monté sur `/var/www/app/storage` de la-app).
+Volumes (dans `./data`, jamais dans git) : `data/mariadb` (base), `data/certs` (certificat), `data/acme`, `data/storage` (photos des agents `photos/`, fichiers du parc `fleet/ordres`, `fleet/documents`, `fleet/missions` ; monté sur `/var/www/app/storage` de la-app).
 
 # 3. Réseau
 
@@ -71,19 +71,22 @@ Ne jamais utiliser 7080. Tout nouveau port doit être vérifié libre (sudo ss -
 
 ```
 app/bootstrap.php            autoload App\ → app/, config, helpers
-app/Core/                    Router, Database (PDO, requêtes préparées), View, Auth (rôles, périmètre), Csrf, Audit, Config, Controller, Xlsx (classeurs Excel), helpers.php
-app/Modules/Platform/        connexion, profil, utilisateurs, départements, pages « à venir » (Fleet, Leave)
-  Services/Departments.php   arbre des départements, périmètre SQL des managers
+app/Core/                    Router, Database (PDO, requêtes préparées), View, Auth (rôles, périmètre), Csrf, Audit, Config, Controller, Xlsx (classeurs Excel), Mailer (SMTP sans dépendance), helpers.php
+app/Modules/Platform/        connexion, profil, utilisateurs, départements, page « à venir » (Leave)
+  Services/Departments.php   arbre des départements (direction/service, N+1), périmètre SQL des managers
+  Services/Notifications.php notifications des comptes (cloche, file des e-mails), communes aux modules
 app/Modules/Attendance/      module Présence : Controllers/, Services/, Views/
+app/Modules/Fleet/           module Parc automobile (module 1) : Controllers/, Services/, Views/
 app/Views/                   gabarit layout.php (menu selon le rôle), auth.php, errors/
 public/index.php             contrôleur frontal : TOUTES les routes
 public/assets/               app.css, app.js (sans dépendance), icons.svg, vendor/fontawesome (Free 6.7.2, local)
 public/manifest.webmanifest, sw.js, offline.html   PWA (cache des fichiers versionnés ?v=, jamais /api/)
 bin/compute.php              calcul des journées (--days, --from/--to, --employee-device-id)
+bin/fleet-tasks.php          parc automobile : rappels avant départ, alertes d'expiration, envoi des e-mails (lancé par le worker)
 bin/create-admin.php         création / réinitialisation d'un compte admin
 worker/sync.py, run.sh       service de synchronisation (conteneur la-worker)
-database/schema.sql, seed.sql, migrations/NNN_*.sql
-tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync.py + faux module zk (tests/fakezk)
+database/schema.sql, seed.sql, migrations/NNN_*.sql, seed_fleet_demo.sql (démonstration, JAMAIS en production)
+tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkflowTest.php ; test_sync.py + faux module zk (tests/fakezk)
 ```
 
 **Rôles et droits** (`Auth::ROLES`, droit = 3e argument de la route ; POST = `manage` par défaut) :
@@ -99,22 +102,36 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 | `status` | admin, rh | POST `/agents/{id}/statut` (disponibilité) |
 | `export` | admin, rh | `/agents/export` (rapport Excel de la page Agents) |
 | `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
-| `admin` | admin | `/utilisateurs`, `/journal`, POST `/pointeuses` |
+| `admin` | admin | `/utilisateurs`, `/journal`, POST `/pointeuses`, `/flotte/parametres` |
+| `account` | tous, `employe` compris | `/profil`, `/deconnexion`, `/api/notifications` (+ POST `/api/notifications/lu`) |
 
+**Parc automobile** : droits donnés par le rôle de la plateforme **ou** par `users.fleet_role` (noté `fleet:…` dans `Auth::ABILITIES`) :
+
+| Droit | Qui | Exemples de routes |
+|---|---|---|
+| `fleet` | tous les comptes | `/flotte` (redirige selon le rôle), `/flotte/demandes…`, `/flotte/validations`, `/flotte/missions…` (droits fins dans le contrôleur : `Fleet::access()`) |
+| `fleet_validate` | fleet:validateur, fleet:direction, tout responsable (N+1) d'un département | entrée de menu « À valider » |
+| `fleet_drive` | fleet:chauffeur | entrée de menu « Mes missions » |
+| `fleet_board` | admin, ceo, fleet:gestionnaire, fleet:direction | tableau de bord `/flotte`, `/flotte/registre`, `/flotte/planning`, `/flotte/vehicules`, `/flotte/chauffeurs` |
+| `fleet_manage` | admin, fleet:gestionnaire | `/flotte/demandes/{id}/affecter`, POST véhicules, documents, chauffeurs |
+
+- `employe` : rôle de base du module Parc automobile seulement (demandeurs, chauffeurs) ; compte relié obligatoirement à une fiche (`users.employee_id`). Accueil : `/flotte` (chauffeur : `/flotte/missions`).
 - `ceo` : tout voir (sauf le calendrier), ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements : Agents, tableau de bord, présence du jour, Calendrier, Employés en lecture. `rh` : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture. RH et managers : aucune rubrique `view` (sorties manquantes, modules…), et « sortie manquante » s'affiche « Présent »/« Retard » (`status_info()`).
 - Identifiants insensibles à la casse : `Auth::normalizeUsername()` (minuscules) à l'enregistrement et à la connexion.
 - `app.js` ajoute un bouton « œil » à tout champ mot de passe ; `data-suggest="go|submit|filter"` sur un champ de recherche affiche les propositions (`/api/suggestions`).
 - Périmètre : `Departments::sql(Auth::departmentScope())` dans toute requête accessible à un manager (pages, fiches employés, photos, calendrier, `/api/direct`, `/api/notifications`).
 - Filtres : formulaires `data-auto-filter` (app.js) appliqués à chaque changement, sans bouton « Filtrer ».
 - Cloche des notifications (`layout.php`, `setupNotifications()` dans `app.js`) : badges du jour via `/api/notifications` toutes les 15 s, compteur « 9+ », dernier badge lu en `localStorage`. Plus de notifications en bas à droite.
-- Accueil : `Auth::home()` → `/agents` (ceo, manager) ou `/`.
+- Accueil : `Auth::home()` → `/agents` (ceo, manager), `/flotte` ou `/flotte/missions` (employe), ou `/`. Un compte sans accès à `/` y est redirigé vers son accueil (PWA).
+- Cloche : messages du compte (table `notifications`, lus côté serveur) puis badges du jour (seulement avec le droit `board`).
 
 **Tables** :
 
 | Table | Rôle |
 |---|---|
-| `users`, `login_attempts`, `audit_log` | comptes (rôle, département du manager), anti-force brute, journal |
-| `departments` | arborescence (parent_id), commune à tous les modules |
+| `users`, `login_attempts`, `audit_log` | comptes (rôle, département du manager, fiche employé `employee_id`, rôle Parc automobile `fleet_role`), anti-force brute, journal |
+| `departments` | arborescence (parent_id), direction ou service (`kind`), responsable N+1 (`head_employee_id`), commune à tous les modules |
+| `notifications` | messages d'un compte (cloche) et état de l'e-mail (`email_status` : aucun, en_attente, envoye, echec) |
 | `employee_groups` | groupes d'agents (horaires) |
 | `employees` | liste commune : n° pointeuse, nom affiché, titre, contacts, groupe, département, photo, statut de travail en cours (`work_status*`) |
 | `work_statuses` | historique des disponibilités saisies (télétravail, mission, congé, bureau) avec leur période : raisons d'absence du calendrier |
@@ -122,19 +139,29 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 | `punches` | pointages bruts, copie fidèle, jamais modifiés |
 | `schedules`, `schedule_assignments` | horaires et attributions (agent > groupe > défaut, sur période) |
 | `attendance_days` | une ligne par agent et par jour (arrivée, départ, retard, heures sup, statut, correction de sortie) |
-| `settings` | réglages (`history_start_date`) |
+| `settings` | réglages (`history_start_date`, paramètres du parc `fleet_*`) |
+| `fleet_vehicles`, `fleet_vehicle_documents` | véhicules (état, tracker_id, ref_consumption pour les modules 2 et 4), documents (assurance, contrôle technique ; le plus récent de chaque type fait foi) |
+| `fleet_drivers`, `fleet_driver_vehicles` | chauffeurs (permis), véhicules autorisés (aucun : tous) |
+| `fleet_requests` | demandes : `status` (en_validation, approuvee, affectee, en_cours, terminee, refusee, annulee), `validation` (en_attente, approuvee, refusee), `step` (n1, direction), affectation, urgence |
+| `fleet_request_events`, `fleet_missions`, `fleet_ratings` | historique de chaque demande, démarrage et clôture (km, carburant, photo, état, `*_client_id` des saisies hors réseau), évaluations |
 
 **Services (Attendance)** : `DayCalculator` (règles d'une journée), `ScheduleResolver`, `AttendanceComputer` (calcul et enregistrement), `DashboardStats` (indicateurs, partagés avec `/api/direct`), `AgentStatus` (pastilles de la page Agents), `AgentPhoto` (photos, page Agents et fiche employé), `WorkStatuses` (historique des disponibilités), `Calendar` (cases du calendrier : work / ongoing / open / reason / absent / pending / off).
 
 **Règles de calcul (DayCalculator)** : arrivée = premier badge « entrée » ; départ = dernier badge « sortie » après l'arrivée, ou heure corrigée ; retard compté depuis le début si arrivée > début + tolérance ; pause déduite ; heures sup après la fin si ≥ seuil ; jour non travaillé = « repos » (ou « hors horaire » si badge) ; pas de sortie = « en cours » toute la journée (le temps avance sans attendre de sortie) puis « sortie manquante » (0 heure tant que non corrigée) ; une entrée badgée après la dernière sortie (agent revenu) annule cette sortie. Agent désactivé (`employees.active = 0`, case « Agent actif » de « Modifier la fiche » sur /agents ou de « Modifier l'employé ») : plus calculé ni affiché (pages, cloche, /api/direct, calendrier).
 
-**Worker** (`worker/sync.py`) : un thread par pointeuse active, connexion permanente ; synchro complète au démarrage puis toutes les `FULL_SYNC_INTERVAL` s (1800) ; badges en direct (`live_capture`) insérés dans `punches` ; recalcul de l'agent via `php bin/compute.php --employee-device-id=…` (au plus toutes les 5 s) ; calcul global des `COMPUTE_DAYS` (7) derniers jours toutes les `SYNC_INTERVAL` s (300) ; reconnexion 10 s → 30 s → 60 s → 5 min ; remise à l'heure des horloges à `CLOCK_SET_AT` (03:00), seule écriture sur les appareils.
+**Services (Fleet)** : `FleetWorkflow` (circuit pur, testé : seuils de la direction, N+1, refus, urgence, clôture), `Availability` (conflits et indisponibilités, pur, testé), `Timeline` (positions de la frise), `Fleet` (données, réservations, droits sur une demande `access()`, historique `event()`), `FleetNotify` (destinataires de chaque étape), `FleetFiles` (fichiers hors de public/), `FleetStats` (tableau de bord).
+
+**Règles du circuit (FleetWorkflow)** : N+1 = responsable du service du demandeur (en remontant l'arbre si le demandeur est lui-même responsable ou si personne n'est désigné) ; direction en plus si hors ville, plus de `fleet_direction_max_days` jours (2) ou week-end ; sans N+1 avec compte : direction directement ; refus avec motif obligatoire ; personne ne valide sa propre demande ; urgence : affectation possible avant validation (`assigned_before_validation`), validation a posteriori ; un refus avant le départ libère le véhicule. Affectation en transaction avec `SELECT … FOR UPDATE` (demande, véhicule, chauffeur) et contrôles refaits sous verrou.
+
+**Worker** (`worker/sync.py`) : un thread par pointeuse active, connexion permanente ; synchro complète au démarrage puis toutes les `FULL_SYNC_INTERVAL` s (1800) ; badges en direct (`live_capture`) insérés dans `punches` ; recalcul de l'agent via `php bin/compute.php --employee-device-id=…` (au plus toutes les 5 s) ; calcul global des `COMPUTE_DAYS` (7) derniers jours toutes les `SYNC_INTERVAL` s (300) ; reconnexion 10 s → 30 s → 60 s → 5 min ; remise à l'heure des horloges à `CLOCK_SET_AT` (03:00), seule écriture sur les appareils ; thread « parc-automobile » : `php bin/fleet-tasks.php` toutes les `FLEET_TASKS_INTERVAL` s (60 ; 0 = désactivé).
 
 **Mode direct** : les pages `data-live` (tableau de bord, présence du jour, agents, pointeuses) appellent `GET /api/direct` toutes les 5 s (60 s onglet caché) ; reprise immédiate au retour sur la page (`resume()` dans `startLive()`), requêtes coupées après 15 s. Thème clair uniquement : racine en `color-scheme: light dark` (meta + `:root`, empêche l'assombrissement forcé des navigateurs mobiles), `body` en `only light` ; ne pas remettre `only light` sur la racine.
 
-**Ajouter un module (Fleet, Leave)** :
+**Parc automobile hors réseau** : formulaires `data-offline-form` (écran mission) envoyés par `app.js` ; sans réseau, la saisie (avec `client_id` et `recorded_at`) va dans IndexedDB `liquid-offline` et part dans l'ordre au retour du réseau ; le serveur ignore un `client_id` déjà reçu. Le service worker garde les pages `/flotte/missions…` (cache `liquid-pages`, effacé à la déconnexion). Balises meta `csrf-token` et `user-id` dans `layout.php`.
+
+**Ajouter un module (Leave)** (modèle : `app/Modules/Fleet`) :
 1. Dossier `app/Modules/<Module>/{Controllers,Services,Views}` (namespace `App\Modules\<Module>\…`, vues `'<Module>:nom'`).
-2. Routes dans `public/index.php` avec leur droit ; remplacer les pages `/flotte` ou `/conges` de `ModuleController`.
+2. Routes dans `public/index.php` avec leur droit ; remplacer la page `/conges` de `ModuleController`.
 3. Réutiliser `employees` (et `departments`) par clé étrangère, les comptes et rôles existants, le gabarit `layout.php` (ajouter les entrées du menu).
 4. Tables : migration `database/migrations/NNN_*.sql` + `schema.sql`.
 
@@ -144,7 +171,8 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 - Couleurs #273c88 (principale) et #c8187d (accent) ; coins arrondis de 5 px maximum pour boutons et champs ; style des maquettes : menu latéral coloré, cartes blanches, tableaux aérés.
 - CSP stricte : aucun script inline, aucun attribut style= ou onclick=. Tout le JS dans public/assets/js/app.js, tout le CSS dans public/assets/css/app.css.
 - Requêtes SQL préparées uniquement ; échappement avec e() dans les vues ; jeton CSRF sur chaque POST ; droit vérifié dans la route.
-- Toute modification de données importante passe par Audit::log().
+- Toute modification de données importante passe par Audit::log() ; une demande de véhicule a en plus son historique (`Fleet::event()`).
+- Notifications : `Notifications::send()` (Platform) ; jamais d'e-mail envoyé pendant une requête web (file `notifications.email_status`, envoi par le worker).
 - Modification de schéma : nouveau fichier database/migrations/NNN_nom.sql + mise à jour de schema.sql + commande d'application dans le README.
 - Icônes : Font Awesome Free servi localement, helper `fa('fa-solid fa-…')` ; sprite `icon('nom')` pour le menu. Aucun CDN.
 
@@ -163,12 +191,13 @@ tests/                       DayCalculatorTest.php, CalendarTest.php ; test_sync
 - Développement sur le poste → commit → je fais moi-même git push.
 - Déploiement sur la VM : cd ~/liquid-attendance && git pull && (migration éventuelle) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
 - Le .env n'est pas dans git : il se modifie uniquement sur la VM.
-- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
+- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
 - À la fin de chaque tâche, donne-moi les commandes exactes à lancer sur la VM, dans l'ordre.
 
 Commande de migration (sur la VM, depuis ~/liquid-attendance) :
 `sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/NNN_nom.sql`
-Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`). Toutes rejouables sans risque.
+Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`), `005_flotte.sql` (parc automobile : organisation, rôles, véhicules, chauffeurs, demandes, missions, notifications). Toutes rejouables sans risque.
+Données d'exemple du parc : `database/seed_fleet_demo.sql` (comptes `grace.mbuyi`, `sarah.ilunga`, `jean.mukendi`, `patrick.lunda`, `didier.kasongo`…, mot de passe `demo-flotte-2026`) — base de test uniquement.
 
 # 8. État et questions ouvertes
 
@@ -182,7 +211,8 @@ D'après docs/CADRAGE.md (état au 9 oct. 2026) :
 - 12 oct. 2026 (soir) : tableau de bord en camemberts (présents/absents, à l'heure/en retard, en %), filtres appliqués sans bouton, filtre « Présents (même sortis) » (Présence `status=venus`, Calendrier `presence=venus`), heures « 00h…23h » du calendrier, reprise du direct au déverrouillage du téléphone (page hors ligne qui se recharge seule), thème clair forcé.
 - 12 oct. 2026 (nuit) : page Pointages (`/pointages`, droit `board`, périmètre manager, aujourd'hui seulement pour RH/managers) au lieu du lien « Accès aux salles » du tableau de bord, derniers pointages cliquables vers la fiche de l'agent, bouton « Voir le rapport détaillé », correctif du mode sombre forcé sur téléphone.
 - 13 oct. 2026 : rapport Excel (.xlsx) de la page Agents (`/agents/export`, droit `export` : admin et RH) avec période (du/au, 93 jours max), filtre (arrivés, à l'heure, en retard, pas arrivés, télétravail, mission, congé), département et agent ; une ligne par agent et par jour + récapitulatif par agent ; classeur écrit par `App\Core\Xlsx` (sans extension zip).
-- Questions ouvertes : horaires réels et groupes à saisir ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
+- 20 oct. 2026 : **Parc automobile, module 1** (migration `005_flotte.sql`) : directions/services et N+1, rôle `employe`, compte relié à une fiche, rôles Parc automobile ; véhicules, documents (alerte 30 j), chauffeurs ; demandes (ordre de mission), circuit N+1 → direction (hors ville, > 2 jours, week-end), refus motivé, urgence validée a posteriori ; affectation avec frise et verrou anti-double réservation, planning ; écran mission téléphone avec saisie hors réseau (IndexedDB) ; cloche + e-mails SMTP (`SMTP_*` dans .env) + rappel 1 h avant (worker) ; évaluation ; historique ; tableau de bord et paramètres.
+- Questions ouvertes : horaires réels et groupes à saisir ; parc automobile : nombre de véhicules et de sites, trackers GPS, serveur SMTP à fournir, anglais de l'interface ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.
 

@@ -89,7 +89,8 @@ final class Fleet
             ($req['driver_employee_id'] !== null && (int) $req['driver_employee_id'] === $employee)
             || ((int) $req['with_driver'] === 0 && $requester && $req['vehicle_id'] !== null));
         $validate = null;
-        if ($req['validation'] === 'en_attente' && !in_array($req['status'], ['refusee', 'annulee'], true)) {
+        // Personne ne valide sa propre demande (un directeur qui demande : un autre membre de la direction)
+        if (!$requester && $req['validation'] === 'en_attente' && !in_array($req['status'], ['refusee', 'annulee'], true)) {
             if ($req['step'] === 'n1' && (int) $req['n1_user_id'] === Auth::id()) {
                 $validate = 'n1';
             } elseif ($req['step'] === 'direction' && (Auth::user()['fleet_role'] ?? '') === 'direction') {
