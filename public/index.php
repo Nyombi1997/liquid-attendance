@@ -7,6 +7,7 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Core\Router;
 use App\Modules\Attendance\Controllers as A;
+use App\Modules\Fleet\Controllers as F;
 use App\Modules\Platform\Controllers as P;
 
 session_name('liquid_session');
@@ -29,7 +30,6 @@ $r->get('/departements', [P\DepartmentController::class, 'index'], 'manage');
 $r->post('/departements', [P\DepartmentController::class, 'store']);
 $r->post('/departements/{id}', [P\DepartmentController::class, 'update']);
 $r->post('/departements/{id}/supprimer', [P\DepartmentController::class, 'destroy']);
-$r->get('/flotte', [P\ModuleController::class, 'fleet']);
 $r->get('/conges', [P\ModuleController::class, 'leave']);
 
 // Employés et groupes (liste commune à tous les modules)
@@ -81,5 +81,16 @@ $r->post('/presence/recalculer', [A\ScheduleController::class, 'recompute']);
 $r->get('/pointeuses', [A\DeviceController::class, 'index']);
 $r->post('/pointeuses', [A\DeviceController::class, 'store'], 'admin');
 $r->post('/pointeuses/{id}', [A\DeviceController::class, 'update'], 'admin');
+
+// Parc automobile (Fleet) : droits fleet_* (Auth), contrôles fins dans les contrôleurs
+$r->get('/flotte/vehicules', [F\VehicleController::class, 'index'], 'fleet_board');
+$r->post('/flotte/vehicules', [F\VehicleController::class, 'store'], 'fleet_manage');
+$r->get('/flotte/vehicules/{id}', [F\VehicleController::class, 'show'], 'fleet_board');
+$r->post('/flotte/vehicules/{id}', [F\VehicleController::class, 'update'], 'fleet_manage');
+$r->post('/flotte/vehicules/{id}/documents', [F\VehicleController::class, 'storeDocument'], 'fleet_manage');
+$r->get('/flotte/documents/{id}', [F\VehicleController::class, 'document'], 'fleet_board');
+$r->get('/flotte/chauffeurs', [F\DriverController::class, 'index'], 'fleet_board');
+$r->post('/flotte/chauffeurs', [F\DriverController::class, 'store'], 'fleet_manage');
+$r->post('/flotte/chauffeurs/{id}', [F\DriverController::class, 'update'], 'fleet_manage');
 
 $r->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

@@ -42,8 +42,12 @@ $nav = [
         ['/departements', 'sitemap', 'Départements', ['/departements'], 'manage'],
         ['/groupes', 'layers', 'Groupes', ['/groupes'], 'view'],
     ],
+    // Parc automobile : chaque entrée selon le droit de sa route (comptes « employé » compris)
+    'Parc automobile' => [
+        ['/flotte/vehicules', 'car', 'Véhicules', ['/flotte/vehicules', '/flotte/documents'], 'fleet_board'],
+        ['/flotte/chauffeurs', 'id-card', 'Chauffeurs', ['/flotte/chauffeurs'], 'fleet_board'],
+    ],
     'Modules' => [
-        ['/flotte', 'car', 'Parc automobile', ['/flotte'], 'view'],
         ['/conges', 'sun', 'Congés', ['/conges'], 'view'],
     ],
     'Administration' => [

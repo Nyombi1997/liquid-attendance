@@ -5,17 +5,9 @@ namespace App\Modules\Platform\Controllers;
 
 use App\Core\Controller;
 
-/** Modules prévus mais pas encore développés. */
+/** Modules prévus mais pas encore développés (le Parc automobile a son propre module : app/Modules/Fleet). */
 final class ModuleController extends Controller
 {
-    public function fleet(): void
-    {
-        $this->render('Platform:soon', [
-            'title' => 'Parc automobile',
-            'text'  => 'Gestion du parc de véhicules et de leurs attributions aux employés. Module prévu en priorité 2.',
-        ]);
-    }
-
     public function leave(): void
     {
         $this->render('Platform:soon', [
