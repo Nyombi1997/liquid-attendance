@@ -9,6 +9,7 @@ use App\Core\Database;
 use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
 use App\Modules\Platform\Services\Departments;
+use App\Modules\Platform\Services\Notifications;
 
 /**
  * Mode « en direct » : GET /api/direct, appelé toutes les 5 s par les pages
@@ -77,13 +78,36 @@ final class LiveController extends Controller
      * Cloche des notifications (toutes les pages) : GET /api/notifications?after=ID
      *   after : dernier pointage déjà lu par l'utilisateur (mémorisé dans le navigateur)
      * Renvoie les derniers badges du jour et le nombre de badges du jour non lus,
-     * dans le périmètre de l'utilisateur (managers : leur département).
+     * dans le périmètre de l'utilisateur (managers : leur département ; comptes
+     * « employé » : aucun badge), et ses messages (Parc automobile : demandes,
+     * validations, affectations, rappels), lus ou non (table notifications).
      */
     public function notifications(): void
     {
         session_write_close();
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
+
+        $messages = array_map(static fn(array $n) => [
+            'id'     => (int) $n['id'],
+            'kind'   => $n['kind'],
+            'title'  => $n['title'],
+            'body'   => $n['body'],
+            'url'    => $n['url'],
+            'time'   => ago_label($n['created_at']),
+            'unread' => $n['read_at'] === null,
+        ], Notifications::latest((int) Auth::id(), 10));
+        $out = [
+            'last_id'         => 0,
+            'unread'          => 0,
+            'items'           => [],
+            'messages'        => $messages,
+            'messages_unread' => Notifications::unread((int) Auth::id()),
+        ];
+        if (!Auth::can('board')) {
+            echo json_encode($out, JSON_UNESCAPED_UNICODE);
+            return;
+        }
 
         // Agents désactivés : leurs badges ne sont plus signalés
         $scope = ' AND (e.id IS NULL OR e.active = 1)' . Departments::sql(Auth::departmentScope());
@@ -118,7 +142,18 @@ final class LiveController extends Controller
                 'time'   => substr($p['punched_at'], 11, 5),
                 'url'    => $p['employee_id'] !== null ? '/employes/' . (int) $p['employee_id'] : null,
             ], $rows),
-        ], JSON_UNESCAPED_UNICODE);
+        ] + $out, JSON_UNESCAPED_UNICODE);
+    }
+
+    /** Messages de la cloche marqués comme lus : POST /api/notifications/lu (up_to : dernier message affiché). */
+    public function markRead(): void
+    {
+        session_write_close();
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        $upTo = (int) ($_POST['up_to'] ?? 0);
+        $n = Notifications::markRead((int) Auth::id(), $upTo > 0 ? $upTo : null);
+        echo json_encode(['ok' => true, 'read' => $n]);
     }
 
     /** Nouveaux pointages (index primaire), du plus récent au plus ancien. */

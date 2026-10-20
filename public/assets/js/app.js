@@ -49,6 +49,7 @@
   // Outils partagés
   const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const faIcon = (cls) => { const i = document.createElement('i'); i.className = cls; i.setAttribute('aria-hidden', 'true'); return i; };
+  const metaContent = (name) => document.querySelector(`meta[name="${name}"]`)?.content || '';
   const initialsOf = (name) => (String(name).trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || '?');
 
   // Mots de passe : bouton « œil » pour afficher / masquer la saisie
@@ -643,9 +644,10 @@
   // Recadrage de photo hors de la page Agents (formulaire de la fiche employé)
   $$('[data-cropper-standalone]').forEach((root) => createCropper(root).reset(root.dataset.cropperPhoto || null));
 
-  // Cloche des notifications (toutes les pages) : badges du jour, dans le
-  // périmètre de l'utilisateur. Nombre de non lus en haut à droite (« 9+ » au-delà
-  // de 9) ; le dernier badge lu est mémorisé dans le navigateur.
+  // Cloche des notifications (toutes les pages) : messages de l'utilisateur
+  // (parc automobile : demandes, validations, affectations, rappels ; lus côté
+  // serveur) puis badges du jour dans son périmètre (dernier badge lu mémorisé
+  // dans le navigateur). Nombre de non lus en haut à droite (« 9+ » au-delà de 9).
   const notif = document.querySelector('[data-notif]');
   if (notif) setupNotifications(notif);
 
@@ -659,12 +661,23 @@
     try { seen = parseInt(localStorage.getItem(SEEN_KEY), 10) || 0; } catch (e) { /* stockage indisponible */ }
     let lastId = 0;
     let shownSeen = seen; // surlignage des non lus pendant que la liste est ouverte
+    let lastMessage = 0;  // dernier message affiché
     let timer = null;
     let busy = false;
+    let lastData = { items: [], messages: [] };
 
     const save = (id) => {
       seen = Math.max(seen, id);
       try { localStorage.setItem(SEEN_KEY, String(seen)); } catch (e) { /* stockage indisponible */ }
+    };
+    // Messages lus côté serveur (jusqu'au dernier affiché)
+    const readMessages = () => {
+      if (!lastMessage || !lastData.messages.some((m) => m.unread)) return;
+      const fd = new FormData();
+      fd.append('_csrf', metaContent('csrf-token'));
+      fd.append('up_to', String(lastMessage));
+      fetch('/api/notifications/lu', { method: 'POST', body: fd, credentials: 'same-origin' }).catch(() => {});
+      lastData.messages.forEach((m) => { m.unread = false; });
     };
     const setCount = (n) => {
       const label = n > 9 ? '9+' : String(n);
@@ -678,44 +691,72 @@
       void node.offsetWidth;
       node.classList.add('is-bumped');
     };
-    const render = (items) => {
-      if (!items.length) {
+    const section = (text) => {
+      const li = document.createElement('li');
+      li.className = 'notif-section';
+      li.textContent = text;
+      return li;
+    };
+    const row = (url, unread, iconNode, title, detail, time) => {
+      const li = document.createElement('li');
+      const el = document.createElement(url ? 'a' : 'div');
+      el.className = `notif-item${unread ? ' is-unread' : ''}`;
+      if (url) el.href = url;
+      const main = document.createElement('span');
+      main.className = 'list-main';
+      const strong = document.createElement('strong');
+      strong.textContent = title;
+      main.appendChild(strong);
+      if (detail) {
+        const small = document.createElement('small');
+        small.textContent = detail;
+        main.appendChild(small);
+      }
+      const t = document.createElement('span');
+      t.className = 'time';
+      t.textContent = time;
+      el.append(iconNode, main, t);
+      li.appendChild(el);
+      return li;
+    };
+    const render = (data, highlight) => {
+      const items = data.items || [];
+      const messages = data.messages || [];
+      if (!items.length && !messages.length) {
         const li = document.createElement('li');
         li.className = 'notif-empty muted';
-        li.textContent = 'Aucun badge aujourd\'hui.';
+        li.textContent = rootEl.dataset.badges ? 'Aucune notification ni badge aujourd\'hui.' : 'Aucune notification.';
         list.replaceChildren(li);
         return;
       }
-      const dirIcon = { entree: 'arrow-in', sortie: 'arrow-out', acces: 'door' };
-      const sprite = (document.querySelector('svg use')?.getAttribute('href') || '/assets/icons.svg').split('#')[0];
-      list.replaceChildren(...items.map((n) => {
-        const li = document.createElement('li');
-        const row = document.createElement(n.url ? 'a' : 'div');
-        row.className = `notif-item${n.id > shownSeen ? ' is-unread' : ''}`;
-        if (n.url) row.href = n.url;
-        const dir = document.createElement('span');
-        dir.className = `dir dir-${n.kind}`;
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'icon');
-        svg.setAttribute('aria-hidden', 'true');
-        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', `${sprite}#${dirIcon[n.kind] || 'door'}`);
-        svg.appendChild(use);
-        dir.appendChild(svg);
-        const main = document.createElement('span');
-        main.className = 'list-main';
-        const strong = document.createElement('strong');
-        strong.textContent = n.text;
-        const small = document.createElement('small');
-        small.textContent = n.device;
-        main.append(strong, small);
-        const time = document.createElement('span');
-        time.className = 'time';
-        time.textContent = n.time;
-        row.append(dir, main, time);
-        li.appendChild(row);
-        return li;
-      }));
+      const nodes = [];
+      if (messages.length) {
+        if (items.length) nodes.push(section('Parc automobile'));
+        messages.forEach((m) => {
+          const dir = document.createElement('span');
+          dir.className = 'dir dir-fleet';
+          dir.appendChild(faIcon('fa-solid fa-car'));
+          nodes.push(row(m.url, highlight && m.unread, dir, m.title, m.body, m.time));
+        });
+      }
+      if (items.length) {
+        if (messages.length) nodes.push(section('Badges du jour'));
+        const dirIcon = { entree: 'arrow-in', sortie: 'arrow-out', acces: 'door' };
+        const sprite = (document.querySelector('svg use')?.getAttribute('href') || '/assets/icons.svg').split('#')[0];
+        items.forEach((n) => {
+          const dir = document.createElement('span');
+          dir.className = `dir dir-${n.kind}`;
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('class', 'icon');
+          svg.setAttribute('aria-hidden', 'true');
+          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+          use.setAttribute('href', `${sprite}#${dirIcon[n.kind] || 'door'}`);
+          svg.appendChild(use);
+          dir.appendChild(svg);
+          nodes.push(row(n.url, n.id > shownSeen, dir, n.text, n.device, n.time));
+        });
+      }
+      list.replaceChildren(...nodes);
     };
 
     async function poll() {
@@ -730,16 +771,19 @@
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        lastData = data;
         lastId = data.last_id || lastId;
+        lastMessage = Math.max(0, ...(data.messages || []).map((m) => m.id));
+        render(data, true);
         if (!panel.hidden) {
-          // Liste ouverte : les nouveaux badges sont lus aussitôt
+          // Liste ouverte : les nouveautés sont lues aussitôt
           save(lastId);
+          readMessages();
           setCount(0);
         } else {
           shownSeen = seen;
-          setCount(data.unread || 0);
+          setCount((data.unread || 0) + (data.messages_unread || 0));
         }
-        render(data.items || []);
       } catch (e) {
         /* réseau indisponible : nouvel essai au prochain passage */
       } finally {
@@ -754,7 +798,9 @@
       btn.setAttribute('aria-expanded', String(show));
       if (show) {
         shownSeen = seen;
+        render(lastData, true);
         save(lastId);
+        readMessages();
         setCount(0);
       } else {
         // Les éléments surlignés sont désormais lus
@@ -765,6 +811,7 @@
     btn.addEventListener('click', () => open(panel.hidden));
     rootEl.querySelector('[data-notif-read]').addEventListener('click', () => {
       save(lastId);
+      readMessages();
       shownSeen = seen;
       setCount(0);
       $$('.is-unread', list).forEach((n) => n.classList.remove('is-unread'));
@@ -1240,7 +1287,6 @@
   // Chaque saisie porte un identifiant (client_id) : un double envoi est ignoré
   // par le serveur. Les règles (kilométrage, droits) restent vérifiées par le serveur.
   const QUEUE_DB = 'liquid-offline';
-  const metaContent = (name) => document.querySelector(`meta[name="${name}"]`)?.content || '';
   const openQueue = () => new Promise((resolve, reject) => {
     if (!window.indexedDB) { reject(new Error('IndexedDB indisponible')); return; }
     const req = indexedDB.open(QUEUE_DB, 1);

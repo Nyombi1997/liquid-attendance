@@ -17,6 +17,9 @@ Processus principal du conteneur `worker` (lancé par run.sh) :
 - Chaque nuit à 03:00, l'horloge de chaque pointeuse est remise à l'heure de
   la VM : c'est la seule écriture faite sur les appareils. Rien n'y est
   jamais effacé ni modifié d'autre.
+- Parc automobile : toutes les FLEET_TASKS_INTERVAL secondes (60), dans un
+  thread à part, bin/fleet-tasks.php envoie les rappels avant départ, les
+  alertes d'expiration et les e-mails des notifications (0 : désactivé).
 
 Les employés absents de la plateforme sont créés (le nom de la pointeuse sert
 de nom initial ; ensuite seul `device_name` est mis à jour, sauf si le nom
@@ -54,8 +57,10 @@ RETRY_DELAYS = (10, 30, 60, 300)
 STABLE_AFTER = 120           # une connexion tenue 2 min remet le délai de reconnexion à 10 s
 DEVICE_RELOAD = 60           # relecture de la table devices (ajout, désactivation, changement d'IP)
 INITIAL_WAIT = 600           # attente max. des premières synchros avant le premier calcul global
+FLEET_TASKS_INTERVAL = env_float("FLEET_TASKS_INTERVAL", 60)  # parc automobile : rappels, alertes, e-mails
 PHP = os.environ.get("PHP_BIN", "php")
 COMPUTE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "compute.php")
+FLEET_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fleet-tasks.php")
 
 stop = threading.Event()
 
@@ -151,6 +156,25 @@ def run_compute(args):
     except Exception as exc:  # noqa: BLE001
         log(f"ERREUR calcul ({' '.join(args)}) : {type(exc).__name__}: {exc}")
         return False
+
+
+def run_fleet_tasks():
+    """Lance bin/fleet-tasks.php (rappels, alertes d'expiration, e-mails) ; vrai si réussi."""
+    try:
+        res = subprocess.run([PHP, FLEET_SCRIPT], timeout=600, check=False)
+        if res.returncode != 0:
+            log(f"ERREUR tâches du parc automobile : code de sortie {res.returncode}")
+        return res.returncode == 0
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERREUR tâches du parc automobile : {type(exc).__name__}: {exc}")
+        return False
+
+
+def fleet_loop():
+    """Tâches du parc automobile toutes les FLEET_TASKS_INTERVAL s, indépendantes des pointeuses."""
+    while not stop.is_set():
+        run_fleet_tasks()
+        stop.wait(FLEET_TASKS_INTERVAL)
 
 
 class Recompute:
@@ -509,6 +533,11 @@ def main():
     workers = {}
     computers = []
     clear_live()
+    fleet = None
+    if FLEET_TASKS_INTERVAL > 0:
+        log(f"parc automobile : rappels, alertes et e-mails toutes les {FLEET_TASKS_INTERVAL:.0f} s")
+        fleet = threading.Thread(target=fleet_loop, name="parc-automobile", daemon=True)
+        fleet.start()
 
     while not stop.is_set():
         try:
@@ -549,6 +578,8 @@ def main():
         w.join(timeout=LIVE_TIMEOUT + 5)
     for t in computers:
         t.join(timeout=5)
+    if fleet is not None:
+        fleet.join(timeout=5)
     log("arrêt terminé")
     return 0
 

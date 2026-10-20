@@ -190,6 +190,10 @@ def fake_compute(args):
 
 
 sync.run_compute = fake_compute
+
+FLEET_RUNS = []
+sync.FLEET_TASKS_INTERVAL = 0.5
+sync.run_fleet_tasks = lambda: FLEET_RUNS.append(time.monotonic()) or True
 per_agent_calls = lambda since=0: [(t, a) for t, a in COMPUTES[since:] if a[0].startswith("--employee-device-id=")]  # noqa: E731
 
 fail = 0
@@ -382,6 +386,7 @@ start = time.monotonic()
 sync.main()
 driver.join(5)
 elapsed = time.monotonic() - start
+check("tâches du parc automobile lancées régulièrement", len(FLEET_RUNS) >= 2, str(len(FLEET_RUNS)))
 check("arrêt propre sur SIGTERM, en quelques secondes", sync.stop.is_set() and elapsed < 60 and not driver.is_alive(),
       f"{elapsed:.1f} s")
 print(f"\n{fail} échec(s)" if fail else "\nTous les tests passent.")

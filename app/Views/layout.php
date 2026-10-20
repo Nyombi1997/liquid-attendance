@@ -121,7 +121,7 @@ $nav = array_filter($nav);
           <span class="live-dot"></span><strong data-live-label>En direct</strong><small data-live-ago></small>
         </span>
         <span class="today"><?= e(ucfirst(date_fr(date('Y-m-d')))) ?></span>
-        <div class="notif" data-notif>
+        <div class="notif" data-notif<?= can('board') ? ' data-badges' : '' ?>>
           <button type="button" class="notif-btn" data-notif-toggle aria-expanded="false" aria-controls="notif-panel" aria-label="Notifications" title="Notifications">
             <?= fa('fa-regular fa-bell') ?><span class="notif-count" data-notif-count hidden></span>
           </button>
@@ -131,7 +131,7 @@ $nav = array_filter($nav);
               <button type="button" class="btn btn-ghost btn-sm" data-notif-read><?= fa('fa-solid fa-check-double') ?> Tout marquer comme lu</button>
             </div>
             <ul class="notif-list" data-notif-list>
-              <li class="notif-empty muted">Aucun badge aujourd'hui.</li>
+              <li class="notif-empty muted">Aucune notification.</li>
             </ul>
           </div>
         </div>

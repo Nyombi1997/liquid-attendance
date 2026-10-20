@@ -62,7 +62,8 @@ $r->get('/acces', [A\AccessController::class, 'index']);
 $r->get('/pointages', [A\PunchController::class, 'index'], 'board');
 $r->get('/calendrier', [A\CalendarController::class, 'index'], 'calendar');
 $r->get('/api/direct', [A\LiveController::class, 'index'], 'board');
-$r->get('/api/notifications', [A\LiveController::class, 'notifications'], 'board');
+$r->get('/api/notifications', [A\LiveController::class, 'notifications'], 'account');
+$r->post('/api/notifications/lu', [A\LiveController::class, 'markRead'], 'account');
 $r->get('/api/suggestions', [A\EmployeeController::class, 'suggest'], 'board');
 
 // Horaires et attributions
