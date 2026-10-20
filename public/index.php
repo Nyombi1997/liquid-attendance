@@ -18,9 +18,9 @@ $r = new Router();
 // Socle : connexion, profil, utilisateurs, modules à venir
 $r->get('/connexion', [P\AuthController::class, 'showLogin'], null);
 $r->post('/connexion', [P\AuthController::class, 'login'], null);
-$r->post('/deconnexion', [P\AuthController::class, 'logout'], 'board');
-$r->get('/profil', [P\ProfileController::class, 'show'], 'board');
-$r->post('/profil/mot-de-passe', [P\ProfileController::class, 'updatePassword'], 'board');
+$r->post('/deconnexion', [P\AuthController::class, 'logout'], 'account');
+$r->get('/profil', [P\ProfileController::class, 'show'], 'account');
+$r->post('/profil/mot-de-passe', [P\ProfileController::class, 'updatePassword'], 'account');
 $r->get('/utilisateurs', [P\UserController::class, 'index'], 'admin');
 $r->post('/utilisateurs', [P\UserController::class, 'store'], 'admin');
 $r->post('/utilisateurs/{id}', [P\UserController::class, 'update'], 'admin');

@@ -95,10 +95,12 @@ $nav = array_filter($nav);
   <div class="main">
     <header class="topbar">
       <button class="menu-toggle" type="button" data-toggle-sidebar aria-label="Menu"><?= icon('menu') ?></button>
+      <?php if (can('staff')): ?>
       <form class="search" action="/employes" method="get" role="search">
         <?= icon('search') ?>
         <input type="search" name="q" placeholder="Rechercher un employé…" aria-label="Rechercher" autocomplete="off" data-suggest="go">
       </form>
+      <?php endif; ?>
       <div class="topbar-right">
         <span class="live-status" data-live-status hidden role="status" aria-live="polite">
           <span class="live-dot"></span><strong data-live-label>En direct</strong><small data-live-ago></small>

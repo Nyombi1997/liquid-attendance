@@ -63,6 +63,11 @@ final class Router
                     return;
                 }
                 if (!Auth::can($route['ability'])) {
+                    // Page d'accueil (PWA, logo) d'un compte qui n'y a pas accès : sa propre page d'accueil
+                    if ($method === 'GET' && $path === '/' && Auth::home() !== '/') {
+                        header('Location: ' . Auth::home());
+                        return;
+                    }
                     http_response_code(403);
                     (new View())->render('errors/403', ['title' => 'Accès refusé']);
                     return;

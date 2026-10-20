@@ -12,11 +12,22 @@ $options = static function (?int $selected, ?int $exclude = null) use ($tree): s
     }
     return $html;
 };
+// Responsable (N+1) : valide les demandes de véhicule de l'équipe (Parc automobile)
+$headOptions = static function (?int $selected) use ($employees): string {
+    $html = '<option value="0">Aucun</option>';
+    foreach ($employees as $emp) {
+        $html .= '<option value="' . (int) $emp['id'] . '"' . ($selected === (int) $emp['id'] ? ' selected' : '') . '>' . e($emp['name']) . '</option>';
+    }
+    return $html;
+};
+$kindField = static fn(string $kind): string => '<label class="field"><span>Type</span><select name="kind">'
+    . '<option value="service"' . ($kind === 'service' ? ' selected' : '') . '>Service</option>'
+    . '<option value="direction"' . ($kind === 'direction' ? ' selected' : '') . '>Direction</option></select></label>';
 ?>
 <div class="page-head">
   <div>
     <h1>Départements</h1>
-    <p class="muted">Organisation des agents. Un manager voit les agents de son département et de ses sous-départements. <?= $none ?> agent(s) actif(s) sans département.</p>
+    <p class="muted">Organisation en directions et services. Un manager voit les agents de son département et de ses sous-départements ; le responsable (N+1) valide les demandes de véhicule de son équipe. <?= $none ?> agent(s) actif(s) sans département.</p>
   </div>
   <div class="head-actions">
     <a class="btn btn-outline" href="/agents"><?= fa('fa-solid fa-id-card') ?> Voir les agents</a>
@@ -26,11 +37,13 @@ $options = static function (?int $selected, ?int $exclude = null) use ($tree): s
 
 <section class="card table-card">
   <table class="table">
-    <thead><tr><th>Département</th><th class="num">Agents</th><th>Managers</th><th></th></tr></thead>
+    <thead><tr><th>Département</th><th>Type</th><th>Responsable (N+1)</th><th class="num">Agents</th><th>Managers</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($tree as $d): ?>
       <tr>
         <td><span class="tree-indent depth-<?= min(5, $d['depth']) ?>"><?= fa($d['depth'] ? 'fa-solid fa-turn-up fa-rotate-90 muted' : 'fa-solid fa-sitemap muted') ?> <strong><?= e($d['name']) ?></strong></span></td>
+        <td><span class="badge <?= $d['kind'] === 'direction' ? 'badge-primary' : 'badge-info' ?>"><?= $d['kind'] === 'direction' ? 'Direction' : 'Service' ?></span></td>
+        <td><?php if (isset($heads[$d['id']])): ?><?= e($heads[$d['id']]['name']) ?><?= $heads[$d['id']]['has_account'] ? '' : ' <span class="badge badge-warn" title="Le responsable doit avoir un compte relié à sa fiche pour valider">sans compte</span>' ?><?php else: ?><span class="muted">—</span><?php endif; ?></td>
         <td class="num"><a href="/agents?dep=<?= $d['id'] ?>"><?= $agents[$d['id']] ?? 0 ?></a></td>
         <td><?= isset($managers[$d['id']]) ? e(implode(', ', $managers[$d['id']])) : '<span class="muted">—</span>' ?></td>
         <td class="actions">
@@ -41,7 +54,7 @@ $options = static function (?int $selected, ?int $exclude = null) use ($tree): s
         </td>
       </tr>
     <?php endforeach; ?>
-    <?php if (!$tree): ?><tr><td colspan="4" class="muted center">Aucun département. Commencez par « Nouveau département ».</td></tr><?php endif; ?>
+    <?php if (!$tree): ?><tr><td colspan="6" class="muted center">Aucun département. Commencez par « Nouveau département ».</td></tr><?php endif; ?>
     </tbody>
   </table>
 </section>
@@ -52,6 +65,9 @@ $options = static function (?int $selected, ?int $exclude = null) use ($tree): s
     <h2>Nouveau département</h2>
     <label class="field"><span>Nom</span><input name="name" maxlength="100" required></label>
     <label class="field"><span>Rattaché à</span><select name="parent_id"><?= $options(null) ?></select></label>
+    <?= $kindField('service') ?>
+    <label class="field"><span>Responsable (N+1)</span><select name="head_employee_id"><?= $headOptions(null) ?></select>
+      <small class="hint">Valide les demandes de véhicule du service ; il lui faut un compte relié à sa fiche (Utilisateurs).</small></label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
       <button class="btn btn-primary" type="submit">Créer</button>
@@ -66,6 +82,9 @@ $options = static function (?int $selected, ?int $exclude = null) use ($tree): s
     <h2><?= e($d['name']) ?></h2>
     <label class="field"><span>Nom</span><input name="name" value="<?= e($d['name']) ?>" maxlength="100" required></label>
     <label class="field"><span>Rattaché à</span><select name="parent_id"><?= $options($d['parent_id'], $d['id']) ?></select></label>
+    <?= $kindField($d['kind']) ?>
+    <label class="field"><span>Responsable (N+1)</span><select name="head_employee_id"><?= $headOptions($d['head_employee_id']) ?></select>
+      <small class="hint">Valide les demandes de véhicule du service ; il lui faut un compte relié à sa fiche (Utilisateurs).</small></label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
       <button class="btn btn-primary" type="submit">Enregistrer</button>

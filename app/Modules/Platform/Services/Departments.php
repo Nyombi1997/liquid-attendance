@@ -9,6 +9,8 @@ use App\Core\Database;
  * Départements (table departments) : arborescence partagée par tous les modules.
  * Un agent (employees.department_id) et un manager (users.department_id)
  * appartiennent à un département ; un manager voit aussi les sous-départements.
+ * kind : direction ou service ; head_employee_id : responsable (N+1) qui valide
+ * les demandes de véhicule (FleetWorkflow::resolveN1()).
  */
 final class Departments
 {
@@ -20,9 +22,10 @@ final class Departments
     {
         if (self::$all === null) {
             self::$all = [];
-            foreach (Database::all('SELECT id, name, parent_id FROM departments ORDER BY name') as $d) {
+            foreach (Database::all('SELECT id, name, parent_id, kind, head_employee_id FROM departments ORDER BY name') as $d) {
                 self::$all[(int) $d['id']] = ['id' => (int) $d['id'], 'name' => $d['name'],
-                    'parent_id' => $d['parent_id'] !== null ? (int) $d['parent_id'] : null];
+                    'parent_id' => $d['parent_id'] !== null ? (int) $d['parent_id'] : null, 'kind' => $d['kind'],
+                    'head_employee_id' => $d['head_employee_id'] !== null ? (int) $d['head_employee_id'] : null];
             }
         }
         return self::$all;

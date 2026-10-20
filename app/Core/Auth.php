@@ -12,6 +12,7 @@ use App\Modules\Platform\Services\Departments;
  *   ceo     : consultation de tous les départements, aucune modification
  *   manager : Agents, tableau de bord, présence du jour, Employés et Calendrier de son département uniquement
  *   lecteur : consultation uniquement
+ *   employe : module Parc automobile seulement (demandes de véhicule, missions)
  * Les rubriques réservées au droit « view » (sorties manquantes, modules…) ne
  * s'affichent ni pour les RH ni pour les managers.
  *
@@ -25,7 +26,18 @@ use App\Modules\Platform\Services\Departments;
  *   export   : rapport Excel de la page Agents
  *   manage   : toutes les autres modifications
  *   admin    : comptes, pointeuses, journal
+ *   account  : profil, déconnexion, cloche des notifications (tous les comptes)
  * Les données d'un manager sont en plus filtrées par departmentScope().
+ *
+ * Parc automobile : droits donnés par le rôle de la plateforme ou par le rôle
+ * Parc automobile du compte (users.fleet_role, noté « fleet:… » ci-dessous) :
+ *   fleet          : faire une demande, suivre ses demandes et ses missions (tous les comptes)
+ *   fleet_validate : rubrique « À valider » (validateurs, direction, et tout responsable
+ *                    de service désigné comme N+1 dans Départements)
+ *   fleet_drive    : rubrique « Mes missions » des chauffeurs
+ *   fleet_board    : tableau de bord, registre des demandes, planning, véhicules et chauffeurs (consultation)
+ *   fleet_manage   : véhicules, chauffeurs et affectations (gestionnaire de flotte)
+ * Les paramètres du circuit relèvent du droit admin.
  */
 final class Auth
 {
@@ -39,6 +51,21 @@ final class Auth
         'export'   => ['admin', 'rh'],
         'manage'   => ['admin'],
         'admin'    => ['admin'],
+        'account'  => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe'],
+        // Parc automobile
+        'fleet'          => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe'],
+        'fleet_validate' => ['fleet:validateur', 'fleet:direction'],
+        'fleet_drive'    => ['fleet:chauffeur'],
+        'fleet_board'    => ['admin', 'ceo', 'fleet:gestionnaire', 'fleet:direction'],
+        'fleet_manage'   => ['admin', 'fleet:gestionnaire'],
+    ];
+
+    public const FLEET_ROLES = [
+        'demandeur'    => 'Demandeur',
+        'validateur'   => 'Validateur (N+1)',
+        'gestionnaire' => 'Gestionnaire de flotte',
+        'chauffeur'    => 'Chauffeur',
+        'direction'    => 'Direction',
     ];
 
     public const ROLES = [
@@ -47,6 +74,7 @@ final class Auth
         'ceo'     => 'Direction (CEO)',
         'manager' => 'Manager de département',
         'lecteur' => 'Lecteur',
+        'employe' => 'Employé (parc automobile)',
     ];
 
     /** @var int[]|null|false false = pas encore calculé */
@@ -58,7 +86,7 @@ final class Auth
     {
         if (self::$user === null && !empty($_SESSION['user_id'])) {
             self::$user = Database::one(
-                'SELECT id, username, full_name, role, department_id FROM users WHERE id = ? AND active = 1',
+                'SELECT id, username, full_name, role, department_id, employee_id, fleet_role FROM users WHERE id = ? AND active = 1',
                 [$_SESSION['user_id']]
             );
             if (self::$user === null) {
@@ -76,7 +104,33 @@ final class Auth
     public static function can(string $ability): bool
     {
         $user = self::user();
-        return $user !== null && in_array($user['role'], self::ABILITIES[$ability] ?? [], true);
+        if ($user === null) {
+            return false;
+        }
+        $allowed = self::ABILITIES[$ability] ?? [];
+        if (in_array($user['role'], $allowed, true) || in_array('fleet:' . $user['fleet_role'], $allowed, true)) {
+            return true;
+        }
+        // Responsable de service (N+1) : valide les demandes de son équipe
+        return $ability === 'fleet_validate' && self::isDepartmentHead();
+    }
+
+    /** Fiche employé reliée au compte (demandes de véhicule, missions), ou null. */
+    public static function employeeId(): ?int
+    {
+        $id = self::user()['employee_id'] ?? null;
+        return $id !== null ? (int) $id : null;
+    }
+
+    /** Le titulaire du compte est-il responsable (N+1) d'au moins un département ? */
+    public static function isDepartmentHead(): bool
+    {
+        static $cache = [];
+        $employee = self::employeeId();
+        if ($employee === null) {
+            return false;
+        }
+        return $cache[$employee] ??= (bool) Database::value('SELECT 1 FROM departments WHERE head_employee_id = ? LIMIT 1', [$employee]);
     }
 
     public static function role(): ?string
@@ -101,10 +155,17 @@ final class Auth
         return self::$scope;
     }
 
-    /** Page d'accueil après connexion : la page Agents pour la direction et les managers. */
+    /**
+     * Page d'accueil après connexion : la page Agents pour la direction et les managers,
+     * le Parc automobile pour les comptes « employé » (chauffeurs : leurs missions).
+     */
     public static function home(): string
     {
-        return in_array(self::role(), ['manager', 'ceo'], true) ? '/agents' : '/';
+        return match (true) {
+            self::role() === 'employe' => (self::user()['fleet_role'] ?? '') === 'chauffeur' ? '/flotte/missions' : '/flotte',
+            in_array(self::role(), ['manager', 'ceo'], true) => '/agents',
+            default => '/',
+        };
     }
 
     /** Identifiant insensible à la casse : toujours enregistré et comparé en minuscules. */
