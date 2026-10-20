@@ -45,6 +45,7 @@ $nav = [
     ],
     // Parc automobile : chaque entrée selon le droit de sa route (comptes « employé » compris)
     'Parc automobile' => [
+        ['/flotte/missions', 'arrow-out', 'Mes missions', ['/flotte/missions'], 'fleet_drive'],
         ['/flotte/demandes', 'list', 'Mes demandes', ['/flotte/demandes'], 'fleet'],
         ['/flotte/validations', 'shield', 'À valider', ['/flotte/validations'], 'fleet_validate'],
         ['/flotte/registre', 'layers', 'Registre des demandes', ['/flotte/registre'], 'fleet_board'],
@@ -72,6 +73,8 @@ $nav = array_filter($nav);
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#273c88">
   <meta name="color-scheme" content="light dark">
+  <meta name="csrf-token" content="<?= e(App\Core\Csrf::token()) ?>">
+  <meta name="user-id" content="<?= (int) ($user['id'] ?? 0) ?>">
   <title><?= e($title ?? '') ?> · <?= e(Config::get('app_name')) ?></title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="<?= e(asset('img/icon-192.png')) ?>">
@@ -111,6 +114,9 @@ $nav = array_filter($nav);
       </form>
       <?php endif; ?>
       <div class="topbar-right">
+        <a class="queue-badge" href="/flotte/missions" data-queue-badge hidden title="Saisies de mission gardées sur le téléphone, en attente d'envoi">
+          <?= fa('fa-solid fa-cloud-arrow-up') ?><span data-queue-count>0</span>
+        </a>
         <span class="live-status" data-live-status hidden role="status" aria-live="polite">
           <span class="live-dot"></span><strong data-live-label>En direct</strong><small data-live-ago></small>
         </span>

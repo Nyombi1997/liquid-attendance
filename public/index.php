@@ -98,6 +98,12 @@ $r->get('/flotte/registre', [F\RequestController::class, 'registry'], 'fleet_boa
 $r->get('/flotte/demandes/{id}/affecter', [F\AssignmentController::class, 'form'], 'fleet_manage');
 $r->post('/flotte/demandes/{id}/affecter', [F\AssignmentController::class, 'store'], 'fleet_manage');
 $r->get('/flotte/planning', [F\AssignmentController::class, 'planning'], 'fleet_board');
+$r->get('/flotte/missions', [F\MissionController::class, 'index'], 'fleet');
+$r->get('/flotte/missions/{id}', [F\MissionController::class, 'show'], 'fleet');
+$r->post('/flotte/missions/{id}/demarrer', [F\MissionController::class, 'start'], 'fleet');
+$r->post('/flotte/missions/{id}/cloturer', [F\MissionController::class, 'close'], 'fleet');
+$r->get('/flotte/missions/{id}/photo-depart', [F\MissionController::class, 'photoStart'], 'fleet');
+$r->get('/flotte/missions/{id}/photo-retour', [F\MissionController::class, 'photoEnd'], 'fleet');
 $r->get('/flotte/vehicules', [F\VehicleController::class, 'index'], 'fleet_board');
 $r->post('/flotte/vehicules', [F\VehicleController::class, 'store'], 'fleet_manage');
 $r->get('/flotte/vehicules/{id}', [F\VehicleController::class, 'show'], 'fleet_board');

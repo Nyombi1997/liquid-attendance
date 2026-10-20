@@ -639,6 +639,7 @@ a.tl-bar:hover { text-decoration: none; background: var(--primary-700); }
 
 /* Mission chauffeur (téléphone) et saisie hors réseau */
 .mission-screen { max-width: 640px; width: 100%; }
+.mission-form h2 { margin-bottom: 14px; }
 .mission-screen input[type=number], .mission-screen select { height: 48px; font-size: 18px; }
 .mission-head { display: flex; flex-direction: column; gap: 6px; }
 .mission-head .plate { font-size: 18px; padding: 3px 10px; align-self: flex-start; }
@@ -655,6 +656,8 @@ a.tl-bar:hover { text-decoration: none; background: var(--primary-700); }
 .photo-preview { width: 96px; height: 72px; object-fit: cover; border-radius: var(--radius-ctl); border: 1px solid var(--border); }
 .offline-queue { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .offline-queue[hidden] { display: none; }
+.queue-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); font-size: 12.5px; font-weight: 700; }
+.queue-badge:hover { text-decoration: none; }
 .btn-lg { padding: 13px 18px; font-size: 15px; }
 
 /* Évaluation : étoiles (boutons radio, de 5 à 1 de gauche à droite inversés) */

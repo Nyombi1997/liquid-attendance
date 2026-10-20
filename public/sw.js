@@ -1,11 +1,16 @@
 // Service worker : rend l'application installable et affiche une page
-// hors ligne. Les pages et /api/ ne sont jamais mises en cache (toujours à jour).
+// hors ligne. Les pages et /api/ ne sont pas mises en cache (toujours à jour),
+// sauf les écrans de mission du parc automobile (/flotte/missions…) : gardés
+// à chaque ouverture, ils restent consultables sans réseau pour démarrer ou
+// clôturer une mission (saisie mise en file par app.js). Cache effacé à la
+// déconnexion.
 //
 // Fichiers statiques : les pages les appellent avec « ?v=<date de modification> »
 // (helper PHP asset()). Une URL versionnée ne change jamais de contenu : elle
 // est servie depuis le cache, et seule la dernière version de chaque fichier
 // est gardée. Inutile de modifier CACHE à chaque mise à jour.
-const CACHE = 'liquid-v4'; // v4 : page hors ligne (thème clair forcé)
+const CACHE = 'liquid-v5'; // v5 : écrans de mission consultables hors réseau
+const PAGES = 'liquid-pages';
 const PRECACHE = ['/offline.html', '/assets/js/offline.js', '/assets/icons.svg', '/assets/img/logo.svg', '/assets/img/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -13,7 +18,7 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== PAGES).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -62,12 +67,31 @@ async function navigate(req) {
   return (await caches.match('/offline.html')) || Response.error();
 }
 
+// Écrans de mission : réseau d'abord (copie gardée), copie gardée sans réseau.
+async function missionPage(req) {
+  try {
+    const res = await fetch(req);
+    if (res.ok && !res.redirected) {
+      const cache = await caches.open(PAGES);
+      await cache.put(req, res.clone());
+    }
+    return res;
+  } catch (err) {
+    const hit = await caches.match(req, { cacheName: PAGES });
+    return hit || (await caches.match('/offline.html')) || Response.error();
+  }
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   // Données en direct (/api/) : toujours le réseau, jamais de cache
   if (url.pathname.startsWith('/api/')) return;
+  if (req.mode === 'navigate' && url.pathname.startsWith('/flotte/missions')) {
+    e.respondWith(missionPage(req));
+    return;
+  }
   if (req.mode === 'navigate') {
     e.respondWith(navigate(req));
     return;

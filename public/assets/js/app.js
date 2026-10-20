@@ -1233,6 +1233,271 @@
     schedule(5000);
   }
 
+  // Parc automobile : démarrage et clôture des missions, même sans réseau.
+  // La saisie est envoyée tout de suite si possible ; sinon elle est gardée dans
+  // le téléphone (IndexedDB « liquid-offline ») et envoyée dans l'ordre dès que
+  // le réseau revient (événement online, retour sur la page, toutes les 30 s).
+  // Chaque saisie porte un identifiant (client_id) : un double envoi est ignoré
+  // par le serveur. Les règles (kilométrage, droits) restent vérifiées par le serveur.
+  const QUEUE_DB = 'liquid-offline';
+  const metaContent = (name) => document.querySelector(`meta[name="${name}"]`)?.content || '';
+  const openQueue = () => new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('IndexedDB indisponible')); return; }
+    const req = indexedDB.open(QUEUE_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('queue', { keyPath: 'client_id' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  const queueOp = async (mode, fn) => {
+    const db = await openQueue();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('queue', mode);
+      const req = fn(tx.objectStore('queue'));
+      tx.oncomplete = () => { db.close(); resolve(req ? req.result : undefined); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  };
+  const queueAll = () => queueOp('readonly', (s) => s.getAll()).catch(() => []);
+  const queuePut = (item) => queueOp('readwrite', (s) => s.put(item));
+  const queueDelete = (id) => queueOp('readwrite', (s) => s.delete(id));
+  const myQueue = async () => (await queueAll())
+    .filter((i) => i.user === metaContent('user-id'))
+    .sort((a, b) => a.created - b.created);
+  const newId = () => (window.crypto?.randomUUID ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+  const pad = (n) => String(n).padStart(2, '0');
+  const localTime = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const momentLabel = (m) => (m === 'depart' ? 'démarrage' : 'clôture');
+
+  // Envoi d'une saisie : ok, rejected (refusée par le serveur), session (à reconnecter), offline (réessayer)
+  async function sendEntry(entry) {
+    const fd = new FormData();
+    Object.entries(entry.fields).forEach(([k, v]) => fd.append(k, v));
+    fd.append('_csrf', metaContent('csrf-token'));
+    let res;
+    try {
+      res = await fetch(entry.url, {
+        method: 'POST', body: fd, credentials: 'same-origin', headers: { Accept: 'application/json' },
+        signal: window.AbortSignal?.timeout ? AbortSignal.timeout(30000) : undefined,
+      });
+    } catch (e) {
+      return { status: 'offline' };
+    }
+    if ((res.redirected && new URL(res.url).pathname === '/connexion') || res.status === 401 || res.status === 419) {
+      return { status: 'session' };
+    }
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* réponse non JSON */ }
+    if (res.ok && data?.ok) return { status: 'ok', data };
+    if (data && !data.ok && res.status < 500) return { status: 'rejected', message: data.message || `Erreur ${res.status}` };
+    return { status: 'offline' };
+  }
+
+  let flushing = false;
+  let sessionLost = false;
+  async function flushQueue() {
+    if (flushing || !metaContent('user-id')) return;
+    flushing = true;
+    let sent = 0;
+    try {
+      for (const item of await myQueue()) {
+        if (item.error) continue;
+        const r = await sendEntry(item);
+        if (r.status === 'ok') {
+          await queueDelete(item.client_id);
+          sessionLost = false;
+          sent += 1;
+        } else if (r.status === 'rejected') {
+          item.error = r.message;
+          await queuePut(item);
+        } else {
+          sessionLost = r.status === 'session';
+          break; // hors réseau ou session expirée : on garde l'ordre, nouvel essai plus tard
+        }
+      }
+    } catch (e) {
+      /* IndexedDB indisponible */
+    } finally {
+      flushing = false;
+      renderQueue();
+    }
+    // Saisies parties : l'écran de mission est rechargé pour afficher l'état à jour
+    if (sent && document.querySelector('[data-mission-screen]')) window.location.reload();
+  }
+
+  // État de la file : bandeau des pages de mission et pastille de l'en-tête
+  async function renderQueue() {
+    const items = await myQueue();
+    const pending = items.filter((i) => !i.error);
+    const failed = items.filter((i) => i.error);
+    $$('[data-queue-badge]').forEach((b) => {
+      b.hidden = !items.length;
+      const n = b.querySelector('[data-queue-count]');
+      if (n) n.textContent = String(items.length);
+    });
+    $$('[data-offline-status]').forEach((box) => {
+      box.hidden = !items.length;
+      box.classList.toggle('callout-danger', failed.length > 0);
+      box.classList.toggle('callout-warn', !failed.length && pending.length > 0);
+      const nodes = [];
+      if (pending.length) {
+        const p = document.createElement('span');
+        p.append(faIcon('fa-solid fa-cloud-arrow-up'), ` ${pending.length} saisie(s) gardée(s) sur le téléphone : `
+          + pending.map((i) => `${momentLabel(i.moment)} ${i.reference}`).join(', ')
+          + (sessionLost ? '. Session expirée : reconnectez-vous pour les envoyer.' : '. Envoi automatique au retour du réseau.'));
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline btn-sm';
+        btn.textContent = 'Envoyer maintenant';
+        btn.addEventListener('click', flushQueue);
+        nodes.push(p, btn);
+      }
+      failed.forEach((i) => {
+        const p = document.createElement('span');
+        p.append(faIcon('fa-solid fa-triangle-exclamation'), ` ${momentLabel(i.moment)} ${i.reference} refusé : ${i.error}`);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-ghost btn-sm';
+        btn.textContent = 'Retirer';
+        btn.addEventListener('click', async () => { await queueDelete(i.client_id); window.location.reload(); });
+        nodes.push(p, btn);
+      });
+      box.replaceChildren(...nodes);
+    });
+    return items;
+  }
+
+  // Photo du compteur : réduite à 1280 px (JPEG) avant l'envoi ou la mise en file
+  const shrinkPhoto = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Image illisible'));
+      img.onload = () => {
+        const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Mission démarrée hors réseau : la clôture devient possible tout de suite
+  const showCloseAfterStart = (startKm) => {
+    const startCard = document.querySelector('[data-mission-form="depart"]');
+    const closeCard = document.querySelector('[data-mission-form="retour"][data-after-start]');
+    if (startCard) startCard.hidden = true;
+    if (closeCard) {
+      closeCard.hidden = false;
+      const form = closeCard.querySelector('form');
+      form.dataset.startKm = String(startKm);
+      const km = form.querySelector('input[name="km"]');
+      km.min = String(Number(startKm) + 1);
+    }
+  };
+
+  $$('form[data-offline-form]').forEach((form) => {
+    const moment = form.dataset.offlineForm;
+    const errorBox = form.querySelector('[data-form-error]');
+    const photoInput = form.querySelector('[data-photo-input]');
+    const photoData = form.querySelector('[data-photo-data]');
+    const preview = form.querySelector('[data-photo-preview]');
+    const submit = form.querySelector('button[type="submit"]');
+    const showError = (msg) => { errorBox.textContent = msg; errorBox.hidden = !msg; };
+
+    photoInput.addEventListener('change', async () => {
+      const file = photoInput.files && photoInput.files[0];
+      photoData.value = '';
+      preview.hidden = true;
+      if (!file) return;
+      try {
+        photoData.value = await shrinkPhoto(file);
+        preview.src = photoData.value;
+        preview.hidden = false;
+        showError('');
+      } catch (e) {
+        showError('Photo illisible : reprenez la photo du compteur.');
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      showError('');
+      if (!photoData.value) { showError('Prenez la photo du compteur.'); return; }
+      const km = Number(form.querySelector('input[name="km"]').value);
+      if (moment === 'retour' && form.dataset.startKm && km <= Number(form.dataset.startKm)) {
+        showError(`Le kilométrage de retour doit être supérieur à celui du départ (${form.dataset.startKm} km).`);
+        return;
+      }
+      const fields = Object.fromEntries(new FormData(form).entries());
+      delete fields._csrf;
+      fields.client_id = newId();
+      fields.recorded_at = localTime();
+      const entry = {
+        client_id: fields.client_id, url: form.action, fields, moment, created: Date.now(),
+        mission: form.dataset.mission, reference: form.dataset.reference, user: metaContent('user-id'),
+      };
+      submit.disabled = true;
+      const label = submit.textContent;
+      submit.textContent = 'Envoi…';
+      // Saisies déjà en attente : celle-ci passe après elles (ordre démarrage → clôture)
+      const waiting = (await myQueue()).some((i) => !i.error);
+      const r = navigator.onLine && !waiting ? await sendEntry(entry) : { status: 'offline' };
+      if (r.status === 'ok') {
+        window.location.href = r.data.redirect || window.location.href;
+        return;
+      }
+      if (r.status === 'rejected') {
+        showError(r.message);
+        submit.disabled = false;
+        submit.textContent = label;
+        return;
+      }
+      try {
+        await queuePut(entry);
+      } catch (err) {
+        showError('Pas de réseau et stockage du téléphone indisponible : réessayez quand le réseau revient.');
+        submit.disabled = false;
+        submit.textContent = label;
+        return;
+      }
+      sessionLost = r.status === 'session';
+      form.closest('[data-mission-form]').hidden = true;
+      if (moment === 'depart') showCloseAfterStart(fields.km);
+      renderQueue();
+    });
+  });
+
+  // Écran mission ouvert alors qu'une saisie attend : on montre l'étape suivante
+  const missionScreen = document.querySelector('[data-mission-screen]');
+  if (missionScreen) {
+    myQueue().then((items) => {
+      const mine = items.filter((i) => i.mission === missionScreen.dataset.missionScreen && !i.error);
+      const start = mine.find((i) => i.moment === 'depart');
+      if (start) showCloseAfterStart(start.fields.km);
+      if (mine.some((i) => i.moment === 'retour')) {
+        $$('[data-mission-form]').forEach((card) => { card.hidden = true; });
+      }
+    }).catch(() => {});
+  }
+
+  if (metaContent('user-id') && window.indexedDB) {
+    renderQueue().then((items) => { if (items.some((i) => !i.error)) flushQueue(); });
+    window.addEventListener('online', flushQueue);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQueue(); });
+    setInterval(async () => { if ((await myQueue()).some((i) => !i.error)) flushQueue(); }, 30000);
+  }
+
+  // Déconnexion : les pages de mission gardées pour le mode hors réseau sont effacées
+  document.querySelector('form.logout')?.addEventListener('submit', () => {
+    if (window.caches) caches.delete('liquid-pages');
+  });
+
   // Application installable (PWA)
   if ('serviceWorker' in navigator && window.isSecureContext) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
