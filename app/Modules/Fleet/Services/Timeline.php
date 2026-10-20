@@ -42,7 +42,9 @@ final class Timeline
         $out = [];
         for ($t = $a; $t < $b; $t = $byDay ? strtotime('+1 day', $t) : $t + $step) {
             $next = min($b, $byDay ? strtotime('+1 day', $t) : $t + $step);
-            $label = $byDay ? $jours[(int) date('N', $t)] . ' ' . date('d/m', $t) : date('H', $t) . 'h' . (date('H', $t) === '00' ? ' ' . date('d/m', $t) : '');
+            // Frise de plus d'un jour, par heures : la date à minuit
+            $label = $byDay ? $jours[(int) date('N', $t)] . ' ' . date('d/m', $t)
+                : date('H', $t) . 'h' . (date('H', $t) === '00' && $b - $a > 86400 ? ' ' . date('d/m', $t) : '');
             $out[] = [round(($t - $a) / ($b - $a) * 100, 3), round(($next - $t) / ($b - $a) * 100, 3), $label];
         }
         return $out;

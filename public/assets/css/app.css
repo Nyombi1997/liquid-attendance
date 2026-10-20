@@ -56,6 +56,7 @@ small, .small { font-size: 12px; }
 [hidden] { display: none !important; }
 .text-warn { color: var(--warn); font-weight: 600; }
 .text-ok { color: var(--ok); }
+.text-danger { color: var(--danger); }
 
 .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
 .icon-xl { width: 44px; height: 44px; stroke-width: 1.4; color: var(--primary); }
@@ -103,7 +104,7 @@ small, .small { font-size: 12px; }
 .table-card { padding: 0; overflow: hidden; }
 .table-card > .card-head { padding: 18px 20px 0; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 20px; }
 .gap-sm { gap: 12px; }
@@ -693,7 +694,7 @@ a.tl-bar:hover { text-decoration: none; background: var(--primary-700); }
   .cal-agent-cell { min-width: 150px; max-width: 150px; }
   .cal-agent .avatar { display: none; }
   .content { padding: 4px 16px 32px; }
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); }
   .auth { grid-template-columns: 1fr; }
   .auth-art { display: none; }
   .auth-panel { padding: 36px 22px; }

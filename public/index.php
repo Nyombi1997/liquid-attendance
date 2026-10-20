@@ -84,7 +84,7 @@ $r->post('/pointeuses', [A\DeviceController::class, 'store'], 'admin');
 $r->post('/pointeuses/{id}', [A\DeviceController::class, 'update'], 'admin');
 
 // Parc automobile (Fleet) : droits fleet_* (Auth), contrôles fins dans les contrôleurs
-$r->get('/flotte', [F\RequestController::class, 'index'], 'fleet');
+$r->get('/flotte', [F\DashboardController::class, 'index'], 'fleet');
 $r->get('/flotte/demandes', [F\RequestController::class, 'index'], 'fleet');
 $r->get('/flotte/demandes/nouvelle', [F\RequestController::class, 'create'], 'fleet');
 $r->post('/flotte/demandes', [F\RequestController::class, 'store'], 'fleet');
@@ -114,5 +114,7 @@ $r->get('/flotte/documents/{id}', [F\VehicleController::class, 'document'], 'fle
 $r->get('/flotte/chauffeurs', [F\DriverController::class, 'index'], 'fleet_board');
 $r->post('/flotte/chauffeurs', [F\DriverController::class, 'store'], 'fleet_manage');
 $r->post('/flotte/chauffeurs/{id}', [F\DriverController::class, 'update'], 'fleet_manage');
+$r->get('/flotte/parametres', [F\SettingsController::class, 'index'], 'admin');
+$r->post('/flotte/parametres', [F\SettingsController::class, 'update'], 'admin');
 
 $r->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

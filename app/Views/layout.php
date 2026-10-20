@@ -45,13 +45,15 @@ $nav = [
     ],
     // Parc automobile : chaque entrée selon le droit de sa route (comptes « employé » compris)
     'Parc automobile' => [
+        ['/flotte', 'dashboard', 'Tableau de bord', ['/flotte$'], 'fleet_board'],
         ['/flotte/missions', 'arrow-out', 'Mes missions', ['/flotte/missions'], 'fleet_drive'],
-        ['/flotte/demandes', 'list', 'Mes demandes', ['/flotte/demandes'], 'fleet'],
+        ['/flotte/demandes', 'list', 'Mes demandes', ['/flotte/demandes$', '/flotte/demandes/nouvelle'], 'fleet'],
         ['/flotte/validations', 'shield', 'À valider', ['/flotte/validations'], 'fleet_validate'],
         ['/flotte/registre', 'layers', 'Registre des demandes', ['/flotte/registre'], 'fleet_board'],
         ['/flotte/planning', 'timeline', 'Planning', ['/flotte/planning'], 'fleet_board'],
         ['/flotte/vehicules', 'car', 'Véhicules', ['/flotte/vehicules', '/flotte/documents'], 'fleet_board'],
         ['/flotte/chauffeurs', 'id-card', 'Chauffeurs', ['/flotte/chauffeurs'], 'fleet_board'],
+        ['/flotte/parametres', 'filter', 'Paramètres', ['/flotte/parametres'], 'admin'],
     ],
     'Modules' => [
         ['/conges', 'sun', 'Congés', ['/conges'], 'view'],
