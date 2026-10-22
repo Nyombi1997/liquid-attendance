@@ -26,6 +26,7 @@ $r->get('/utilisateurs', [P\UserController::class, 'index'], 'admin');
 $r->post('/utilisateurs', [P\UserController::class, 'store'], 'admin');
 $r->post('/utilisateurs/{id}', [P\UserController::class, 'update'], 'admin');
 $r->get('/journal', [P\UserController::class, 'audit'], 'admin');
+$r->get('/etat-du-service', [P\ServiceController::class, 'index'], 'admin');
 $r->get('/departements', [P\DepartmentController::class, 'index'], 'manage');
 $r->post('/departements', [P\DepartmentController::class, 'store']);
 $r->post('/departements/{id}', [P\DepartmentController::class, 'update']);

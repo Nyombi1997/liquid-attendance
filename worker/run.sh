@@ -7,6 +7,8 @@
 #     (un appel au plus toutes les 5 s pour tous les agents en attente),
 #     et calcul global des COMPUTE_DAYS derniers jours toutes les
 #     SYNC_INTERVAL secondes (300), en filet de sécurité ;
-#   - remise à l'heure des pointeuses chaque nuit à CLOCK_SET_AT (03:00).
+#   - remise à l'heure des pointeuses au démarrage (écart > CLOCK_MAX_DRIFT)
+#     et chaque nuit à CLOCK_SET_AT (03:00) ;
+#   - battement de cœur en base, sauvegarde de la base à BACKUP_AT (02:00).
 # exec : Python reçoit directement le signal d'arrêt de Docker.
 exec python3 /var/www/app/worker/sync.py

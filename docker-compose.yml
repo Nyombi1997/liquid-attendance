@@ -6,6 +6,7 @@
 #   MariaDB   : aucun port publié, réseau Docker interne
 #
 # Ne jamais lancer `docker system prune --volumes` : les données sont dans ./data
+# (base, certificats, fichiers déposés, sauvegardes ./data/backups)
 
 name: liquid-attendance
 
@@ -41,6 +42,9 @@ services:
     env_file: .env
     environment:
       TZ: ${APP_TIMEZONE:-Africa/Kinshasa}
+    volumes:
+      # Sauvegarde nocturne de la base (02:00, 14 jours gardés)
+      - ./data/backups:/backups
     depends_on:
       db:
         condition: service_healthy

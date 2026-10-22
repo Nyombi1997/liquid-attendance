@@ -18,9 +18,10 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 
 - **Tout est en direct** : un badge apparaît dans la plateforme en quelques secondes, sans recharger la page (voir « Fonctionnement en direct » ci-dessous).
 - **Synchronisation complète** sur la même connexion (ces appareils n'acceptent souvent qu'un client à la fois) : au démarrage puis toutes les 30 minutes (`FULL_SYNC_INTERVAL`), elle relit les utilisateurs, tous les pointages et l'horloge. Rien n'est perdu pendant une coupure : les badges restent sur l'appareil et sont repris à la reconnexion.
-- **Reconnexion automatique** en cas de coupure, après 10 s, 30 s, 60 s puis toutes les 5 minutes, sans bloquer les autres pointeuses. L'erreur est affichée sur la page Pointeuses.
+- **Reconnexion automatique** en cas de coupure, après 10 s, 30 s, 60 s puis toutes les 5 minutes, sans bloquer les autres pointeuses ; après 5 échecs de suite (`MAX_FAILURES`), une tentative toutes les 30 minutes (`FAILED_RETRY_DELAY`). L'erreur est affichée sur la page Pointeuses.
+- **Pointeuses lentes** (F16 du NOC et de l'IT Room, `SLOW_DEVICES=10.0.4.4,10.0.4.5`) : délai d'attente de 60 s (`SLOW_TIMEOUT`) et journal détaillé (durée de chaque essai TCP/UDP, mode `verbose` de pyzk) dans `sudo docker compose logs worker`.
 - **Calcul global** des 7 derniers jours toutes les 5 minutes (`SYNC_INTERVAL`), dans un thread à part, en filet de sécurité.
-- **Rien n'est effacé ni modifié sur les appareils**, à une exception près : chaque nuit à 03:00 (`CLOCK_SET_AT`, `off` pour désactiver), l'horloge de chaque pointeuse est remise à l'heure de la VM. L'écart avant et après est noté dans le journal du worker et dans le journal d'activité.
+- **Rien n'est effacé ni modifié sur les appareils**, à une exception près : l'horloge de chaque pointeuse est remise à l'heure de la VM au démarrage du service si l'écart dépasse 30 s (`CLOCK_MAX_DRIFT`), puis chaque nuit à 03:00 (`CLOCK_SET_AT`, `off` pour désactiver). L'écart avant et après est noté dans le journal du worker et dans le journal d'activité.
 - **Importe les employés** depuis les pointeuses. Le nom affiché dans la plateforme se modifie ensuite par un admin, sans toucher aux appareils.
 - **Calcule chaque journée** : arrivée, départ, temps de présence, retard, départ anticipé, heures supplémentaires.
 - **Horaires saisis manuellement**, attribuables à tout le monde, à un groupe ou à un ou plusieurs agents, sur une période. Priorité : agent > groupe > horaire par défaut. Les horaires de nuit (qui passent minuit) sont gérés.
@@ -29,6 +30,8 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Rapport détaillé** : bouton de la carte « Répartition du jour » du tableau de bord, vers la Présence du jour (Calendrier pour les RH).
 - **Accès aux salles** (NOC, IT Room) : historique des entrées, séparé du calcul de présence.
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
+- **État du service** (Administration › État du service, `/etat-du-service`, administrateur) : dernier passage du worker (battement de cœur en base toutes les 60 s ; alerte s'il ne répond plus), pointeuses en écoute, dernier badge et écart d'horloge de chaque pointeuse, taille de la base et des plus grosses tables, dernière sauvegarde (date, taille, erreur éventuelle).
+- **Sauvegarde nocturne** de la base par le worker, chaque nuit à 02:00 (`BACKUP_AT`) : `mariadb-dump` compressé dans `./data/backups` (`liquid_AAAA-MM-JJ.sql.gz`), 14 jours gardés (`BACKUP_KEEP_DAYS`).
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
 - **Page Agents** (`/agents`) : une carte par agent avec photo, titre, e-mail et téléphone (copiables d'un clic), département, groupe, **heure d'arrivée du jour** (vert : à l'heure, orange : en retard, rouge : pas arrivé) et **statut de travail** en haut à droite (au bureau, télétravail, mission, congé). Filtres par département (arbre à gauche), par état (à l'heure, en retard, pas arrivés…) et recherche instantanée. Mise à jour en direct.
 - **Fiche agent depuis la carte** (Administrateur) : nom, titre, e-mail, téléphone, département et **photo recadrée dans le navigateur** (carré 512 px, JPEG). Un clic sur la **photo** d'une carte ouvre la page de détails de l'agent (`/employes/{id}`) ; le formulaire « Modifier l'employé » propose aussi de changer ou retirer la photo.
@@ -96,7 +99,7 @@ Sur les pages **Tableau de bord**, **Présence** (journée d'aujourd'hui), **Age
 
 L'application reste toujours en **thème clair**, même quand le téléphone est en mode sombre. Les navigateurs mobiles (Chrome « assombrir les sites », Samsung Internet…) n'assombrissent de force que les pages qui ne gèrent pas le mode sombre et ignorent souvent `only light` : la racine annonce donc `color-scheme: light dark` (balise meta et `:root`), et `body` est rendu en `only light` avec un fond explicite sur `html`.
 
-`/api/direct` (droit « consultation ») renvoie du JSON, jamais mis en cache : nouveaux pointages depuis `since_punch` (30 au plus), journées du jour modifiées depuis `since_day`, indicateurs (les mêmes que le tableau de bord, service `DashboardStats`), retards du jour et état des pointeuses. Il libère le verrou de session dès l'utilisateur vérifié, pour ne pas bloquer les autres onglets, et répond en quelques millisecondes (index sur `punches.id` et `attendance_days.computed_at`). `computed_at` ne change que si le résultat d'une journée change : le calcul global des 5 minutes ne renvoie donc pas toutes les lignes aux pages ouvertes.
+`/api/direct` (droit `board` : tous les rôles de la plateforme, périmètre du manager appliqué) renvoie du JSON, jamais mis en cache : nouveaux pointages depuis `since_punch` (30 au plus), journées du jour modifiées depuis `since_day`, indicateurs (les mêmes que le tableau de bord, service `DashboardStats`), retards du jour et état des pointeuses. Il libère le verrou de session dès l'utilisateur vérifié, pour ne pas bloquer les autres onglets, et répond en quelques millisecondes (index sur `punches.id` et `attendance_days.computed_at`). `computed_at` ne change que si le résultat d'une journée change : le calcul global des 5 minutes ne renvoie donc pas toutes les lignes aux pages ouvertes.
 
 ---
 
@@ -141,10 +144,21 @@ La plateforme cohabite avec ELK sans réutiliser aucun de ses ports :
 
 | Port | Usage | Exposé |
 |---|---|---|
-| 8443/tcp | Application HTTPS | VM + NAT public 41.174.155.178:8443 |
-| 8088/tcp | Validation du certificat Let's Encrypt | VM + NAT public 41.174.155.178:80 |
+| 8443/tcp | Application HTTPS | VM ; publication Internet par la DMZ (en attente) |
+| 8088/tcp | Validation du certificat Let's Encrypt | VM ; port public 80 → 8088 par la DMZ (en attente) |
 | 8090/tcp | phpMyAdmin | `127.0.0.1` uniquement (tunnel SSH) |
 | — | MariaDB | Réseau Docker interne, aucun port publié |
+
+### 0. Prérequis réseau : accès aux pointeuses
+
+Depuis le 14 oct. 2026, la VM joint les pointeuses directement par sa deuxième carte réseau (`ens19` = 10.0.4.249/24, **sans passerelle**, VLAN 3602 ; détails dans `docs/CADRAGE.md`). Aucune route ni règle du MikroTik n'est nécessaire. Vérifier :
+
+```bash
+ip -br addr show ens19                 # ens19 UP 10.0.4.249/24
+ip route | grep 10.0.4                 # une seule ligne : 10.0.4.0/24 dev ens19 … src 10.0.4.249
+ip route get 10.0.4.18                 # … dev ens19 src 10.0.4.249
+for ip in 18 20 7 15 5 4; do nc -zv -w 3 10.0.4.$ip 4370; done
+```
 
 ### 1. Récupérer le code et configurer
 
@@ -178,21 +192,15 @@ sudo docker compose exec -it app php bin/create-admin.php beni "Beni Ekwema"
 
 La plateforme est alors accessible sur **https://10.169.153.144:8443**. Le navigateur affiche un avertissement, car le certificat est provisoire et auto-signé tant que l'étape 5 n'est pas faite.
 
-### 4. Publier sur Internet (MikroTik)
+### 4. Publier sur Internet (DMZ, en attente)
 
-**Avant tout**, obtenir la réservation DHCP de la VM (MAC `bc:24:11:ba:ee:70` → 10.169.153.144). Ensuite :
+La publication passera par une **DMZ (VLAN 3604)** mise en place par l'équipe sécurité, avec Kibana (5601), avis customers (7080) et syslog (514). Le sous-réseau, l'adresse de la VM dans la DMZ et les règles de publication sont **encore à fournir** : rien n'est à configurer d'ici là. Il faudra publier le port 8443 et rediriger le port public 80 vers 8088 (validation Let's Encrypt).
 
-```
-/ip firewall nat add chain=dstnat dst-address=41.174.155.178 protocol=tcp dst-port=8443 action=dst-nat to-addresses=10.169.153.144 to-ports=8443 comment="Plateforme interne"
-/ip firewall nat add chain=dstnat dst-address=41.174.155.178 protocol=tcp dst-port=80 action=dst-nat to-addresses=10.169.153.144 to-ports=8088 comment="Plateforme: validation Let's Encrypt"
-/ip firewall nat add chain=srcnat dst-address=10.169.153.144 protocol=tcp dst-port=8088,8443 out-interface=vlan102-elk action=masquerade comment="Plateforme: retour via MikroTik"
-```
-
-Le masquerade est nécessaire, car la VM a sa propre passerelle (10.169.153.1), comme pour Kibana. Il permet aussi aux employés du bureau d'utiliser la même adresse publique.
+Avant la publication, obtenir aussi la réservation DHCP de la VM (MAC `bc:24:11:ba:ee:70` → 10.169.153.144).
 
 ### 5. Certificat HTTPS gratuit pour l'adresse IP (Let's Encrypt)
 
-Let's Encrypt délivre des certificats pour une adresse IP avec le profil `shortlived` (validité d'environ 6 jours). Le conteneur `acme` les renouvelle automatiquement, et l'application recharge le nouveau certificat dans les 10 minutes.
+À faire une fois la DMZ en place ; remplacer 41.174.155.178 par l'adresse publique retenue si elle change. Let's Encrypt délivre des certificats pour une adresse IP avec le profil `shortlived` (validité d'environ 6 jours). Le conteneur `acme` les renouvelle automatiquement, et l'application recharge le nouveau certificat dans les 10 minutes.
 
 ```bash
 sudo docker compose exec acme acme.sh --register-account -m ton-adresse@email --server letsencrypt
@@ -204,7 +212,7 @@ sudo docker compose exec acme acme.sh --install-cert -d 41.174.155.178 --ecc \
 
 Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le téléphone propose « Installer l'application ».
 
-> Ne pas retirer la règle NAT du port 80 : elle sert à chaque renouvellement.
+> Ne pas retirer la redirection du port public 80 vers 8088 : elle sert à chaque renouvellement.
 
 ---
 
@@ -213,7 +221,8 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 | Besoin | Commande |
 |---|---|
 | Accéder à phpMyAdmin | depuis ton poste : `ssh -L 8090:127.0.0.1:8090 ubuntu01@10.169.153.144`, puis http://localhost:8090 |
-| Voir la synchronisation | `sudo docker compose logs -f worker` |
+| Voir la synchronisation | `sudo docker compose logs -f worker`, ou Administration › État du service |
+| Sauvegarder la base tout de suite | `sudo docker compose exec worker python3 worker/sync.py --sauvegarde` (fichier dans `./data/backups`) |
 | Tâches du parc automobile (rappels, alertes, e-mails) à la main | `sudo docker compose exec worker php bin/fleet-tasks.php` (lancé seul toutes les 60 s par le worker) |
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
 | Mettre à jour | `git pull`, appliquer les migrations nouvelles (ci-dessous), puis `sudo docker compose up -d --build` |
@@ -246,13 +255,18 @@ Les photos des agents sont enregistrées dans `./data/storage/photos` et les fic
 
 ### Sauvegarde de la base
 
+Automatique : chaque nuit à 02:00 (`BACKUP_AT`, `off` pour désactiver), le worker écrit `./data/backups/liquid_AAAA-MM-JJ.sql.gz` (`mariadb-dump --single-transaction`, compressé) et supprime les fichiers de plus de 14 jours (`BACKUP_KEEP_DAYS`). Résultat et erreurs : Administration › État du service, et `sudo docker compose logs worker | grep sauvegarde`. Copier régulièrement `./data/backups` hors de la VM.
+
+Restaurer une sauvegarde (remplace le contenu de la base) :
+
 ```bash
-mkdir -p ~/backups
-sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' \
-  | gzip > ~/backups/liquid_$(date +%F).sql.gz
+sudo docker compose stop app worker
+gunzip -c data/backups/liquid_2026-10-22.sql.gz \
+  | sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance'
+sudo docker compose start app worker
 ```
 
-À planifier chaque nuit avec `crontab -e`. Les données sont dans `./data` : ne jamais lancer `docker system prune --volumes`.
+Les données sont dans `./data` : ne jamais lancer `docker system prune --volumes`.
 
 ---
 
@@ -262,7 +276,7 @@ sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSW
 app/
   Core/                    noyau MVC : routeur, base, vues, authentification, CSRF, journal
   Modules/
-    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments),
+    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments), état du service,
                            notifications des comptes (Services/Notifications), modules à venir
     Attendance/            module Présence
       Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), CalendarController, LiveController (/api/direct, /api/notifications)
@@ -283,7 +297,7 @@ database/                  schema.sql, seed.sql (chargés au premier démarrage)
 docker/                    images app (Apache + HTTPS) et worker
 public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes), assets/vendor/fontawesome (Font Awesome Free 6.7.2, servi localement)
 storage/                   fichiers déposés (photos) ; en production : volume ./data/storage
-worker/                    sync.py (connexion permanente aux pointeuses, calculs), run.sh (lancement)
+worker/                    sync.py (connexion permanente aux pointeuses, calculs, battement de cœur, sauvegarde nocturne), run.sh (lancement)
 tests/                     règles de calcul, cases du calendrier, circuit du parc automobile (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
 
@@ -297,4 +311,4 @@ Le module Leave aura son dossier dans `app/Modules/` et réutilisera, comme Flee
 - Mots de passe hachés, 12 caractères minimum, 5 échecs en 15 minutes bloquent la connexion.
 - Jeton CSRF sur chaque formulaire, cookie de session `Secure`, `HttpOnly`, `SameSite=Strict`.
 - Rôles vérifiés côté serveur sur chaque route, périmètre des managers appliqué à chaque requête, journal de toutes les modifications.
-- Pointeuses en lecture seule, sauf la remise à l'heure nocturne de l'horloge ; seule la VM peut les joindre (pare-feu MikroTik).
+- Pointeuses en lecture seule, sauf la remise à l'heure de l'horloge (au démarrage si l'écart dépasse 30 s, et chaque nuit) ; la VM les joint par sa carte dédiée au VLAN 3602 (`ens19`, sans passerelle).

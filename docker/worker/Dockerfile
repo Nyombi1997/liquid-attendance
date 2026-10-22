@@ -1,10 +1,11 @@
 # Service de synchronisation : récupère les pointages des ZKTeco (Python/pyzk,
 # testé sur les SF400 et le F18) puis lance le calcul des journées (PHP,
-# mêmes règles que l'application).
+# mêmes règles que l'application). mariadb-client : sauvegarde nocturne
+# (mariadb-dump) dans /backups (./data/backups).
 FROM php:8.3-cli
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pip tzdata \
+ && apt-get install -y --no-install-recommends python3 python3-pip tzdata mariadb-client \
  && rm -rf /var/lib/apt/lists/* \
  && docker-php-ext-install pdo_mysql \
  && pip3 install --no-cache-dir --break-system-packages pyzk "PyMySQL>=1.1"

@@ -7,7 +7,10 @@ Vérifie : badges en direct, synchro complète sur la même connexion, sortie
 propre de live_capture, coupure et reconnexion avec délai croissant, une
 pointeuse en panne qui ne bloque pas les autres, désactivation, recalculs
 regroupés (un appel au plus toutes les RECOMPUTE_EVERY s), calcul global dans
-un thread à part, indicateur « en écoute », remise à l'heure nocturne.
+un thread à part, indicateur « en écoute », remise à l'heure au démarrage
+(écart > 30 s) et nocturne, pointeuses lentes (F16 : délai long, journal
+détaillé), tentatives espacées de 30 min après 5 échecs, battement de cœur,
+sauvegarde (faux mariadb-dump) et conservation de 14 jours.
 """
 import json
 import os
@@ -33,6 +36,7 @@ class FakeDB:
         self.employees = {}
         self.punches = {}
         self.audit = []
+        self.settings = {}
         self.down = False
 
     def add_device(self, dev_id, ip, name, usage="presence"):
@@ -99,6 +103,9 @@ class Cursor:
                 if key in d.punches:
                     return 0
                 d.punches[key] = p
+                return 1
+            if sql.startswith("INSERT INTO settings"):
+                d.settings[p[0]] = p[1]
                 return 1
             if sql.startswith("INSERT INTO audit_log"):
                 d.audit.append(p)
@@ -173,6 +180,9 @@ sync.STABLE_AFTER = 5
 sync.DEVICE_RELOAD = 0.3
 sync.RECOMPUTE_EVERY = 0.8
 sync.CLOCK_SET_AT = "off"
+sync.BACKUP_AT = "off"
+sync.MAX_FAILURES = 5
+sync.FAILED_RETRY_DELAY = 2.5
 
 COMPUTES = []
 SLOW_GLOBAL = threading.Event()   # calcul global lent (doit ne pas bloquer les recalculs)
@@ -247,6 +257,58 @@ def test_recompute_queue():
     check("file vidée après lecture", r.take() is None and not r.wake.is_set())
 
 
+def test_backup():
+    import gzip
+    import shutil
+    import tempfile
+    work = tempfile.mkdtemp(prefix="la-test-backup-")
+    fake = os.path.join(work, "mariadb-dump")
+    # Faux mariadb-dump : vérifie le mot de passe (échappé) dans le fichier d'options
+    with open(fake, "w") as f:
+        f.write('#!/bin/sh\n'
+                'grep -qF \'password="te\\"st"\' "${1#--defaults-extra-file=}" || { echo "mot de passe" >&2; exit 2; }\n'
+                '[ "$FAIL_DUMP" = 1 ] && { echo "Access denied" >&2; exit 2; }\n'
+                'for last; do :; done\n'
+                'echo "-- dump de $last"\n')
+    os.chmod(fake, 0o755)
+    real = (sync.BACKUP_DIR, sync.MARIADB_DUMP, sync.now, os.environ["DB_PASSWORD"])
+    sync.BACKUP_DIR, sync.MARIADB_DUMP = os.path.join(work, "backups"), fake
+    os.environ["DB_PASSWORD"] = 'te"st'
+    sync.now = lambda: datetime(2026, 10, 22, 2, 0, 3)
+    try:
+        os.makedirs(sync.BACKUP_DIR)
+        for d in (7, 8, 9, 10, 21):  # 8 oct. = aujourd'hui - 14 jours : supprimée
+            open(os.path.join(sync.BACKUP_DIR, f"liquid_2026-10-{d:02d}.sql.gz"), "w").close()
+        open(os.path.join(sync.BACKUP_DIR, "autre.txt"), "w").close()
+        path = sync.run_backup()
+        with gzip.open(path, "rt") as f:
+            content = f.read()
+        check("sauvegarde : dump compressé, mot de passe passé par fichier d'options",
+              os.path.basename(path) == "liquid_2026-10-22.sql.gz" and content.strip() == "-- dump de test", content)
+        check("sauvegarde : 14 jours conservés",
+              sorted(os.listdir(sync.BACKUP_DIR)) == ["autre.txt", "liquid_2026-10-09.sql.gz", "liquid_2026-10-10.sql.gz",
+                                                       "liquid_2026-10-21.sql.gz", "liquid_2026-10-22.sql.gz"],
+              str(sorted(os.listdir(sync.BACKUP_DIR))))
+        check("sauvegarde : état enregistré", DB.settings.get("backup_last_file") == "liquid_2026-10-22.sql.gz"
+              and DB.settings.get("backup_last_error") == "", str(DB.settings))
+        os.environ["FAIL_DUMP"] = "1"
+        sync.now = lambda: datetime(2026, 10, 23, 2, 0, 3)
+        try:
+            sync.run_backup()
+            failed = False
+        except RuntimeError as exc:
+            failed = "Access denied" in str(exc)
+        check("sauvegarde en échec : erreur claire, aucun fichier partiel",
+              failed and not any(n.startswith("liquid_2026-10-23") for n in os.listdir(sync.BACKUP_DIR)))
+        check("fenêtre de sauvegarde (02:00, une fois par nuit)",
+              sync.due_at("02:00", None, 3) and not sync.due_at("02:00", date(2026, 10, 23), 3)
+              and not sync.due_at("off", None, 3))
+    finally:
+        os.environ.pop("FAIL_DUMP", None)
+        sync.BACKUP_DIR, sync.MARIADB_DUMP, sync.now, os.environ["DB_PASSWORD"] = real
+        shutil.rmtree(work, ignore_errors=True)
+
+
 # -- Scénario complet (sync.main dans le thread principal) ---------------------
 
 def scenario():
@@ -270,6 +332,19 @@ def scenario():
         check("historique importé", (1, "1", datetime(2026, 10, 8, 7, 55)) in DB.punches)
         check("premier calcul global après les premières synchros",
               wait_for(lambda: any(args == ["--days=7"] for _, args in COMPUTES)), str(COMPUTES))
+        check("battement de cœur du service enregistré",
+              "worker_heartbeat_at" in DB.settings and "worker_started_at" in DB.settings, str(DB.settings))
+        check("horloge remise à l'heure au démarrage (écart de 125 s > 30 s)",
+              wait_for(lambda: len(a.set_time_calls) == 1, 2) and abs(DB.devices[1]["clock_offset_sec"]) <= 1,
+              str(a.set_time_calls))
+        check("horloge non touchée au démarrage si l'écart est faible", b.set_time_calls == [], str(b.set_time_calls))
+        boot = [json.loads(x[1]) for x in DB.audit]
+        check("remise à l'heure du démarrage journalisée (écart avant et après)",
+              any(x["ip"] == "10.0.4.18" and x["moment"] == "au démarrage" and 124 <= x["ecart_avant_s"] <= 125
+                  and abs(x["ecart_apres_s"]) <= 1 for x in boot), str(boot))
+        check("pointeuse lente (F16) : délai long et journal détaillé",
+              wait_for(lambda: c.options is not None, 2) and c.options == (sync.SLOW_TIMEOUT, True)
+              and a.options == (sync.DEVICE_TIMEOUT, False), f"{c.options} {a.options}")
         check("écoute en direct signalée (live_since), ancien état effacé au démarrage",
               wait_for(lambda: isinstance(DB.devices[1]["live_since"], datetime)
                        and isinstance(DB.devices[2]["live_since"], datetime), 2)
@@ -331,6 +406,12 @@ def scenario():
         check("pointeuse injoignable : erreur claire enregistrée",
               wait_for(lambda: DB.devices[5]["last_sync_ok"] == 0) and "réseau" in (DB.devices[5]["last_error"] or ""),
               str(DB.devices[5]["last_error"]))
+        check("après 5 échecs de suite : tentatives espacées (30 min en production)",
+              wait_for(lambda: len(c.attempts) >= 7, 10), str(len(c.attempts)))
+        gaps = [round(y - x, 2) for x, y in zip(c.attempts, c.attempts[1:])]
+        check("délais : croissants puis FAILED_RETRY_DELAY à partir du 6e essai",
+              all(g < 1.5 for g in gaps[:5]) and all(g >= sync.FAILED_RETRY_DELAY - 0.1 for g in gaps[5:6]),
+              str(gaps))
 
         # Synchro complète périodique sur la même connexion
         syncs = DB.devices[1]["full_syncs"]
@@ -357,14 +438,17 @@ def scenario():
 
         # Remise à l'heure nocturne (fenêtre ouverte maintenant)
         sync.CLOCK_SET_AT = f"{datetime.now():%H:%M}"
-        check("horloge remise à l'heure", wait_for(lambda: len(a.set_time_calls) == 1 and len(b.set_time_calls) == 1, 4))
-        logged = lambda: [json.loads(p[1]) for p in DB.audit if json.loads(p[1])["ip"] == "10.0.4.18"]  # noqa: E731
+        b.clock_offset = timedelta(seconds=-77)
+        check("horloge remise à l'heure", wait_for(lambda: len(a.set_time_calls) == 2 and len(b.set_time_calls) == 1, 4))
+        logged = lambda: [json.loads(p[1]) for p in DB.audit  # noqa: E731
+                          if json.loads(p[1])["ip"] == "10.0.4.20" and json.loads(p[1])["moment"] == "nocturne"]
         check("écart avant et après journalisé",
-              wait_for(lambda: logged() and 124 <= logged()[0]["ecart_avant_s"] <= 125
+              wait_for(lambda: logged() and -78 <= logged()[0]["ecart_avant_s"] <= -76
                        and abs(logged()[0]["ecart_apres_s"]) <= 1, 2)
-              and abs(DB.devices[1]["clock_offset_sec"]) <= 1, str(DB.audit))
+              and abs(DB.devices[2]["clock_offset_sec"]) <= 1, str(DB.audit))
         time.sleep(1.5)
-        check("une seule remise à l'heure par nuit", len(a.set_time_calls) == 1, str(a.set_time_calls))
+        check("une seule remise à l'heure par nuit", len(a.set_time_calls) == 2 and len(b.set_time_calls) == 1,
+              f"{a.set_time_calls} {b.set_time_calls}")
         check("aucune connexion simultanée sur un appareil",
               a.max_connected == 1 and b.max_connected == 1, f"{a.max_connected} {b.max_connected}")
         check("aucune commande pendant l'écoute", not a.violations and not b.violations, f"{a.violations} {b.violations}")
@@ -380,6 +464,7 @@ def scenario():
 
 test_clock_window()
 test_recompute_queue()
+test_backup()
 driver = threading.Thread(target=scenario, daemon=True)
 driver.start()
 start = time.monotonic()

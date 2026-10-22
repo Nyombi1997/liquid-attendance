@@ -14,9 +14,19 @@ Processus principal du conteneur `worker` (lancé par run.sh) :
   thread à part, en filet de sécurité.
 - devices.live_since indique à la plateforme que l'écoute en direct est
   active (« en écoute »), devices.last_event_at l'heure du dernier badge.
-- Chaque nuit à 03:00, l'horloge de chaque pointeuse est remise à l'heure de
-  la VM : c'est la seule écriture faite sur les appareils. Rien n'y est
-  jamais effacé ni modifié d'autre.
+- L'horloge de chaque pointeuse est remise à l'heure de la VM au démarrage
+  si l'écart dépasse CLOCK_MAX_DRIFT secondes (30), puis chaque nuit à 03:00 :
+  c'est la seule écriture faite sur les appareils (écart avant et après
+  journalisé). Rien n'y est jamais effacé ni modifié d'autre.
+- Reconnexion : 10 s, 30 s, 60 s puis 5 min ; après MAX_FAILURES échecs de
+  suite (5), une tentative toutes les FAILED_RETRY_DELAY s (30 min).
+  Pointeuses lentes (SLOW_DEVICES, les F16 10.0.4.4 et 10.0.4.5) : délai
+  d'attente plus long (SLOW_TIMEOUT) et journal détaillé (verbose de pyzk).
+- Battement de cœur (settings.worker_heartbeat_at) à chaque relecture des
+  pointeuses, lu par la page Administration > État du service.
+- Sauvegarde de la base chaque nuit à BACKUP_AT (02:00) : mariadb-dump
+  compressé dans BACKUP_DIR (./data/backups), BACKUP_KEEP_DAYS jours gardés.
+  À la main : python3 worker/sync.py --sauvegarde
 - Parc automobile : toutes les FLEET_TASKS_INTERVAL secondes (60), dans un
   thread à part, bin/fleet-tasks.php envoie les rappels avant départ, les
   alertes d'expiration et les e-mails des notifications (0 : désactivé).
@@ -25,11 +35,14 @@ Les employés absents de la plateforme sont créés (le nom de la pointeuse sert
 de nom initial ; ensuite seul `device_name` est mis à jour, sauf si le nom
 est encore le nom provisoire « Agent <numéro> »).
 """
+import gzip
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta
@@ -50,14 +63,25 @@ COMPUTE_INTERVAL = env_float("SYNC_INTERVAL", 300)          # calcul global (fil
 COMPUTE_DAYS = int(env_float("COMPUTE_DAYS", 7))
 HEARTBEAT_INTERVAL = env_float("HEARTBEAT_INTERVAL", 300)   # contrôle de la connexion (lecture de l'horloge)
 CLOCK_SET_AT = os.environ.get("CLOCK_SET_AT", "03:00").strip()  # « off » pour désactiver
+CLOCK_MAX_DRIFT = env_float("CLOCK_MAX_DRIFT", 30)      # au démarrage : remise à l'heure au-delà de 30 s d'écart
 CLOCK_WINDOW_HOURS = 3       # si la pointeuse était injoignable à 03:00, rattrapage jusqu'à 06:00
 LIVE_TIMEOUT = 10            # live_capture rend la main (None) après 10 s sans badge
 RECOMPUTE_EVERY = 5          # au plus un appel PHP toutes les 5 s pour les agents en attente
 RETRY_DELAYS = (10, 30, 60, 300)
+MAX_FAILURES = int(env_float("MAX_FAILURES", 5))             # échecs de suite avant de ralentir
+FAILED_RETRY_DELAY = env_float("FAILED_RETRY_DELAY", 1800)   # puis une tentative toutes les 30 min
+DEVICE_TIMEOUT = env_float("DEVICE_TIMEOUT", 15)
+SLOW_TIMEOUT = env_float("SLOW_TIMEOUT", 60)                 # F16 : répondent lentement
+SLOW_DEVICES = {ip.strip() for ip in os.environ.get("SLOW_DEVICES", "10.0.4.4,10.0.4.5").split(",") if ip.strip()}
 STABLE_AFTER = 120           # une connexion tenue 2 min remet le délai de reconnexion à 10 s
 DEVICE_RELOAD = 60           # relecture de la table devices (ajout, désactivation, changement d'IP)
 INITIAL_WAIT = 600           # attente max. des premières synchros avant le premier calcul global
 FLEET_TASKS_INTERVAL = env_float("FLEET_TASKS_INTERVAL", 60)  # parc automobile : rappels, alertes, e-mails
+BACKUP_AT = os.environ.get("BACKUP_AT", "02:00").strip()        # « off » pour désactiver
+BACKUP_DIR = os.environ.get("BACKUP_DIR", "/backups")
+BACKUP_KEEP_DAYS = int(env_float("BACKUP_KEEP_DAYS", 14))
+BACKUP_WINDOW_HOURS = 3      # rattrapage jusqu'à 05:00 si le service était arrêté à 02:00
+MARIADB_DUMP = os.environ.get("MARIADB_DUMP_BIN", "mariadb-dump")
 PHP = os.environ.get("PHP_BIN", "php")
 COMPUTE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "compute.php")
 FLEET_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fleet-tasks.php")
@@ -97,14 +121,28 @@ def load_devices():
         conn.close()
 
 
+def is_slow(dev):
+    return dev["ip"] in SLOW_DEVICES
+
+
 def connect_device(dev):
     """Connexion TCP, puis UDP en secours (le protocole qui marche est gardé)."""
+    slow = is_slow(dev)
+    timeout = SLOW_TIMEOUT if slow else DEVICE_TIMEOUT
     last = None
     for udp in (False, True):
+        start = time.monotonic()
         try:
-            return ZK(dev["ip"], port=dev["port"], timeout=15, password=dev["comm_key"],
-                      force_udp=udp, ommit_ping=True).connect()
+            zk = ZK(dev["ip"], port=dev["port"], timeout=timeout, password=dev["comm_key"],
+                    force_udp=udp, ommit_ping=True, verbose=slow).connect()
+            if slow:
+                log(f"{dev['name']} ({dev['ip']}) : {'UDP' if udp else 'TCP'} connecté en "
+                    f"{time.monotonic() - start:.1f} s (délai max. {timeout:.0f} s)")
+            return zk
         except Exception as exc:  # noqa: BLE001
+            if slow:
+                log(f"{dev['name']} ({dev['ip']}) : échec {'UDP' if udp else 'TCP'} après "
+                    f"{time.monotonic() - start:.1f} s (délai max. {timeout:.0f} s) — {type(exc).__name__}: {exc}")
             last = exc
     raise last
 
@@ -133,17 +171,48 @@ def describe(exc):
     return f"{kind} — {type(exc).__name__}: {exc}"[:250]
 
 
-def clock_due(last_date):
-    """Vrai pendant la fenêtre de remise à l'heure, une fois par nuit."""
-    if CLOCK_SET_AT.lower() in ("", "off", "non", "0"):
+def due_at(at, last_date, window_hours):
+    """Vrai entre l'heure « HH:MM » et window_hours plus tard, une fois par jour ; « off » : jamais."""
+    if at.lower() in ("", "off", "non", "0"):
         return False
     try:
-        hour, minute = (int(x) for x in CLOCK_SET_AT.split(":"))
+        hour, minute = (int(x) for x in at.split(":"))
     except ValueError:
         return False
     current = now()
     start = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return last_date != current.date() and start <= current < start + timedelta(hours=CLOCK_WINDOW_HOURS)
+    return last_date != current.date() and start <= current < start + timedelta(hours=window_hours)
+
+
+def clock_due(last_date):
+    """Vrai pendant la fenêtre de remise à l'heure, une fois par nuit."""
+    return due_at(CLOCK_SET_AT, last_date, CLOCK_WINDOW_HOURS)
+
+
+def set_settings(values):
+    """Enregistre des valeurs dans settings (état du service, lu par la plateforme)."""
+    conn = db()
+    try:
+        with conn.cursor() as cur:
+            for name, value in values.items():
+                cur.execute(
+                    "INSERT INTO settings (name, value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE value = VALUES(value)",
+                    (name, str(value)[:255]),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def stamp():
+    return f"{now():%Y-%m-%d %H:%M:%S}"
+
+
+def safe_settings(values):
+    try:
+        set_settings(values)
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERREUR état du service en base : {type(exc).__name__}: {exc}")
 
 
 def run_compute(args):
@@ -212,9 +281,88 @@ def global_loop(first_syncs, ready):
         while not stop.is_set() and not ev.is_set() and time.monotonic() < deadline:
             ev.wait(1)
     while not stop.is_set():
-        run_compute([f"--days={COMPUTE_DAYS}"])
+        if run_compute([f"--days={COMPUTE_DAYS}"]):
+            safe_settings({"compute_last_at": stamp()})
         ready.set()
         stop.wait(COMPUTE_INTERVAL)
+
+
+# -- Sauvegarde de la base -------------------------------------------------
+
+def backup_name(day):
+    return f"liquid_{day:%Y-%m-%d}.sql.gz"
+
+
+def run_backup():
+    """mariadb-dump compressé dans BACKUP_DIR, puis suppression des sauvegardes trop anciennes."""
+    start = time.time()
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    day = now().date()
+    path = os.path.join(BACKUP_DIR, backup_name(day))
+    tmp = path + ".partiel"
+    pw = os.environ["DB_PASSWORD"].replace("\\", "\\\\").replace('"', '\\"')
+    # Mot de passe dans un fichier d'options (0600), jamais dans la ligne de commande
+    with tempfile.NamedTemporaryFile("w", suffix=".cnf", delete=False) as cnf, \
+            tempfile.TemporaryFile() as err:
+        cnf.write(f'[client]\nuser="{os.environ["DB_USER"]}"\npassword="{pw}"\n'
+                  f'host="{os.environ.get("DB_HOST", "db")}"\nport={int(os.environ.get("DB_PORT", "3306"))}\n')
+        cnf.close()
+        try:
+            proc = subprocess.Popen(
+                [MARIADB_DUMP, f"--defaults-extra-file={cnf.name}", "--single-transaction", "--quick",
+                 "--skip-ssl-verify-server-cert", "--default-character-set=utf8mb4", os.environ["DB_NAME"]],
+                stdout=subprocess.PIPE, stderr=err,
+            )
+            with gzip.open(tmp, "wb", compresslevel=6) as out:
+                shutil.copyfileobj(proc.stdout, out, 1 << 20)
+            code = proc.wait(timeout=3600)
+            if code != 0:
+                err.seek(0)
+                raise RuntimeError(f"mariadb-dump code {code} : {err.read().decode(errors='replace').strip()[:200]}")
+            os.replace(tmp, path)
+        finally:
+            os.unlink(cnf.name)
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    size = os.path.getsize(path)
+    removed = prune_backups(day)
+    log(f"sauvegarde : {os.path.basename(path)}, {size / 1048576:.1f} Mo, {time.time() - start:.1f} s"
+        + (f", {removed} ancienne(s) supprimée(s)" if removed else ""))
+    safe_settings({"backup_last_at": stamp(), "backup_last_file": os.path.basename(path),
+                   "backup_last_size": size, "backup_last_error": ""})
+    return path
+
+
+def prune_backups(today):
+    """Garde les BACKUP_KEEP_DAYS derniers jours (une sauvegarde par jour)."""
+    limit = today - timedelta(days=BACKUP_KEEP_DAYS)
+    removed = 0
+    for name in os.listdir(BACKUP_DIR):
+        if not (name.startswith("liquid_") and name.endswith(".sql.gz")):
+            continue
+        try:
+            day = datetime.strptime(name[7:17], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if day <= limit:
+            os.unlink(os.path.join(BACKUP_DIR, name))
+            removed += 1
+    return removed
+
+
+def backup_loop():
+    """Sauvegarde nocturne à BACKUP_AT, une fois par nuit (pas refaite si le fichier du jour existe)."""
+    last = None
+    while not stop.is_set():
+        if due_at(BACKUP_AT, last, BACKUP_WINDOW_HOURS):
+            last = now().date()
+            if not os.path.exists(os.path.join(BACKUP_DIR, backup_name(last))):
+                try:
+                    run_backup()
+                except Exception as exc:  # noqa: BLE001
+                    log(f"ERREUR sauvegarde : {type(exc).__name__}: {exc}")
+                    safe_settings({"backup_last_error": f"{stamp()} — {type(exc).__name__}: {exc}"})
+        stop.wait(30)
 
 
 def recompute_loop(recompute, ready):
@@ -253,6 +401,8 @@ class DeviceWorker(threading.Thread):
         self.first_sync = threading.Event()  # première tentative terminée (réussie ou non)
         self.names = {}
         self.last_clock_date = None
+        self.clock_checked = False           # contrôle de l'horloge au démarrage fait
+        self.offset = None                   # dernier écart d'horloge mesuré
         self.next_full = self.next_beat = 0.0
 
     @property
@@ -283,6 +433,10 @@ class DeviceWorker(threading.Thread):
                 self.full_sync(zk, conn)
                 connected_at = time.monotonic()
                 attempt = 0
+                if not self.clock_checked:
+                    self.clock_checked = True
+                    if abs(self.offset) > CLOCK_MAX_DRIFT:
+                        self.set_clock(zk, conn, "au démarrage")
                 self.first_sync.set()
                 self.set_live(conn, True)
                 self.session(zk, conn)
@@ -292,10 +446,14 @@ class DeviceWorker(threading.Thread):
                     break
                 if connected_at is not None and time.monotonic() - connected_at >= STABLE_AFTER:
                     attempt = 0
-                delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                if attempt >= MAX_FAILURES:
+                    delay = FAILED_RETRY_DELAY
+                else:
+                    delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
                 attempt += 1
                 msg = describe(exc)
-                log(f"ERREUR {self.label} : {msg}. Nouvelle tentative dans {delay} s")
+                log(f"ERREUR {self.label} : {msg}. Échec n° {attempt}, nouvelle tentative dans "
+                    + (f"{delay / 60:.0f} min" if delay >= 120 else f"{delay:g} s"))
                 conn = self.mark_error(conn, msg)
                 self.pause(delay)
             finally:
@@ -462,6 +620,7 @@ class DeviceWorker(threading.Thread):
             )
         conn.commit()
         self.names = names
+        self.offset = offset
         t = time.monotonic()
         self.next_full = t + FULL_SYNC_INTERVAL
         self.next_beat = t + HEARTBEAT_INTERVAL
@@ -480,20 +639,23 @@ class DeviceWorker(threading.Thread):
         conn.commit()
         self.next_beat = time.monotonic() + HEARTBEAT_INTERVAL
 
-    def set_clock(self, zk, conn):
-        """Remise à l'heure nocturne : seule écriture autorisée sur les appareils."""
-        self.last_clock_date = now().date()  # une seule tentative par nuit
+    def set_clock(self, zk, conn, moment="nocturne"):
+        """Remise à l'heure (nocturne, ou au démarrage si l'écart est trop grand) :
+        seule écriture autorisée sur les appareils."""
+        if moment == "nocturne":
+            self.last_clock_date = now().date()  # une seule tentative par nuit
         before = clock_offset(zk)
         zk.set_time(now())
         after = clock_offset(zk)
-        log(f"{self.label} : horloge remise à l'heure de la VM, écart avant {before:+d} s, après {after:+d} s")
+        self.offset = after
+        log(f"{self.label} : horloge remise à l'heure de la VM ({moment}), écart avant {before:+d} s, après {after:+d} s")
         conn.ping(reconnect=True)
         with conn.cursor() as cur:
             cur.execute("UPDATE devices SET clock_offset_sec = %s WHERE id = %s", (after, self.dev["id"]))
             cur.execute(
                 "INSERT INTO audit_log (user_id, action, details, ip) VALUES (NULL, %s, %s, %s)",
                 ("horloge_pointeuse_reglee",
-                 json.dumps({"pointeuse": self.dev["name"], "ip": self.dev["ip"],
+                 json.dumps({"pointeuse": self.dev["name"], "ip": self.dev["ip"], "moment": moment,
                              "ecart_avant_s": before, "ecart_apres_s": after}, ensure_ascii=False),
                  "worker"),
             )
@@ -519,6 +681,10 @@ def signature(dev):
 
 
 def main():
+    if "--sauvegarde" in sys.argv[1:]:
+        run_backup()
+        return 0
+
     def on_signal(signum, _frame):
         log(f"signal {signum} reçu, arrêt en cours")
         stop.set()
@@ -528,7 +694,11 @@ def main():
 
     log(f"démarrage : badges en temps réel, synchro complète toutes les {FULL_SYNC_INTERVAL:.0f} s, "
         f"calcul global toutes les {COMPUTE_INTERVAL:.0f} s sur {COMPUTE_DAYS} jours, "
-        f"horloges remises à l'heure à {CLOCK_SET_AT}")
+        f"horloges remises à l'heure à {CLOCK_SET_AT} (et au démarrage au-delà de {CLOCK_MAX_DRIFT:.0f} s), "
+        f"sauvegarde à {BACKUP_AT} dans {BACKUP_DIR} ({BACKUP_KEEP_DAYS} jours gardés)")
+    if SLOW_DEVICES:
+        log(f"pointeuses lentes ({', '.join(sorted(SLOW_DEVICES))}) : délai {SLOW_TIMEOUT:.0f} s, journal détaillé")
+    safe_settings({"worker_started_at": stamp(), "worker_heartbeat_at": stamp()})
     recompute = Recompute()
     workers = {}
     computers = []
@@ -538,6 +708,8 @@ def main():
         log(f"parc automobile : rappels, alertes et e-mails toutes les {FLEET_TASKS_INTERVAL:.0f} s")
         fleet = threading.Thread(target=fleet_loop, name="parc-automobile", daemon=True)
         fleet.start()
+    backup = threading.Thread(target=backup_loop, name="sauvegarde", daemon=True)
+    backup.start()
 
     while not stop.is_set():
         try:
@@ -572,6 +744,7 @@ def main():
                 for t in computers:
                     t.start()
 
+        safe_settings({"worker_heartbeat_at": stamp()})
         stop.wait(DEVICE_RELOAD)
 
     for w in workers.values():
@@ -580,6 +753,7 @@ def main():
         t.join(timeout=5)
     if fleet is not None:
         fleet.join(timeout=5)
+    backup.join(timeout=5)
     log("arrêt terminé")
     return 0
 

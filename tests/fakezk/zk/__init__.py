@@ -49,6 +49,7 @@ class FakeDevice:
         self.full_reads = 0
         self.set_time_calls = []
         self.attempts = []            # instants des tentatives de connexion (TCP, la première de chaque essai)
+        self.options = None           # (timeout, verbose) de la dernière connexion
 
     def badge(self, user_id, when=None, status=1, punch=0):
         att = Attendance(str(user_id), when or datetime.now().replace(microsecond=0), status, punch, 0)
@@ -58,10 +59,12 @@ class FakeDevice:
 
 
 class ZK:
-    def __init__(self, ip, port=4370, timeout=60, password=0, force_udp=False, ommit_ping=False, **_):
+    def __init__(self, ip, port=4370, timeout=60, password=0, force_udp=False, ommit_ping=False, verbose=False, **_):
         self.ip = ip
         self.tcp = not force_udp
         self.dev = DEVICES.get(ip)
+        if self.dev is not None:
+            self.dev.options = (timeout, verbose)
         self.is_connect = False
         self.capturing = False
         self.end_live_capture = False

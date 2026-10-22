@@ -62,6 +62,7 @@ $nav = [
         ['/pointeuses', 'fingerprint', 'Pointeuses', ['/pointeuses'], 'view'],
         ['/utilisateurs', 'shield', 'Utilisateurs', ['/utilisateurs'], 'admin'],
         ['/journal', 'list', 'Journal d\'activité', ['/journal'], 'admin'],
+        ['/etat-du-service', 'refresh', 'État du service', ['/etat-du-service'], 'admin'],
     ],
 ];
 foreach ($nav as $section => $items) {

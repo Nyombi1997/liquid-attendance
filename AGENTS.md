@@ -32,7 +32,7 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
   - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
   - `export` : rapport Excel de la page Agents (`/agents/export`) — `admin`, `rh` ;
   - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
-  - `admin` : comptes, pointeuses, journal, paramètres du parc automobile ;
+  - `admin` : comptes, pointeuses, journal, état du service (`/etat-du-service`), paramètres du parc automobile ;
   - `account` : profil, déconnexion, cloche (`/api/notifications`) — tous les comptes, `employe` compris ;
   - parc automobile (rôle de la plateforme **ou** `fleet:<fleet_role>` dans `Auth::ABILITIES`) : `fleet` (tous), `fleet_validate`, `fleet_drive`, `fleet_board`, `fleet_manage`. Les droits fins sur une demande (demandeur, validateur de l'étape, chauffeur, gestionnaire) viennent de `Fleet::access()` : toute nouvelle page ou action sur une demande doit l'appeler.
 - **CEO** : tout voir (sauf le calendrier), ne rien modifier. **Manager** : uniquement son département et ses sous-départements (Agents, tableau de bord, présence du jour, Calendrier, Employés). **RH** : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture.
