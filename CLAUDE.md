@@ -191,7 +191,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 # 7. Workflow
 
 - Développement sur le poste → commit → je fais moi-même git push.
-- Déploiement sur la VM : cd ~/liquid-attendance && git pull && (migration éventuelle) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
+- Déploiement sur la VM : procédure détaillée et interdits dans README.md, section « Déploiement : procédure à suivre » (sauvegarde, git pull --ff-only, toutes les migrations dans l'ordre, sudo docker compose up -d --build app worker, vérifications, retour arrière). En résumé : cd ~/liquid-attendance && git pull --ff-only && (migrations) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
 - Le .env n'est pas dans git : il se modifie uniquement sur la VM.
 - Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
 - À la fin de chaque tâche, donne-moi les commandes exactes à lancer sur la VM, dans l'ordre.

@@ -12,6 +12,8 @@ Stack : PHP 8.3 en MVC sans framework, MariaDB 11, phpMyAdmin, Docker Compose. A
 
 Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans [`docs/CADRAGE.md`](docs/CADRAGE.md).
 
+> **Mettre à jour ou déplacer le serveur** (assistant IA compris) : suivre la section [« Déploiement : procédure à suivre »](#déploiement--procédure-à-suivre-assistant-ia-ou-humain), étape par étape.
+
 ---
 
 ## Ce que fait le module Présence
@@ -138,7 +140,166 @@ Les règles du circuit et des conflits sont dans `app/Modules/Fleet/Services/Fle
 
 ---
 
+## Déploiement : procédure à suivre (assistant IA ou humain)
+
+Cette section se suit **telle quelle, étape par étape**, sans improviser. Chaque étape donne la commande, le résultat attendu et quoi faire si le résultat est différent. En cas de doute : **s'arrêter et demander** à Beni, ne jamais « réparer » au hasard.
+
+### Contexte fixe
+
+| Élément | Valeur |
+|---|---|
+| Serveur | VM Ubuntu 26.04, `10.169.153.144` (carte `ens18`, VLAN 102) ; utilisateur `ubuntu01` ; accès `ssh ubuntu01@10.169.153.144` |
+| Accès aux pointeuses | carte `ens19` = `10.0.4.249/24`, **sans passerelle** (VLAN 3602) ; pointeuses 10.0.4.18, .20, .7, .15, .5, .4 sur TCP 4370 |
+| Dossier du projet | `~/liquid-attendance` (toutes les commandes se lancent depuis ce dossier) |
+| Docker | toujours avec `sudo` ; projet compose `liquid-attendance` |
+| Conteneurs | `la-app` (HTTPS 8443), `la-worker` (pointeuses, calculs, sauvegarde), `la-db` (MariaDB, aucun port publié), `la-phpmyadmin` (127.0.0.1:8090), `la-acme` (8088) |
+| Base | `liquid_attendance` ; mot de passe root disponible dans le conteneur : `$MARIADB_ROOT_PASSWORD` |
+| Données | `./data` (`mariadb`, `storage`, `backups`, `certs`, `acme`) : **jamais dans git, jamais supprimées** |
+| Configuration | `.env` : **uniquement sur la VM**, jamais dans git ; modèle : `.env.example` |
+| Code | dépôt `github.com/Nyombi1997/liquid-attendance`, branche `main`. Beni pousse lui-même ; la VM ne fait que `git pull` |
+| Voisin | ELK (`~/elk-mikrotik-deploy`, conteneurs ELK, `/data/elasticsearch`) tourne sur la même VM : **ne jamais y toucher** |
+
+### Interdits absolus
+
+- `docker system prune --volumes`, `docker volume rm`, `docker compose down -v`, `rm -rf data` ou toute suppression dans `./data` (sauf anciennes sauvegardes de `~/sauvegardes-maj`).
+- Arrêter, redémarrer ou modifier un conteneur ELK ; lancer `docker compose` ailleurs que dans `~/liquid-attendance`.
+- Recharger `database/schema.sql` ou `database/seed.sql` sur une base existante ; charger `database/seed_fleet_demo.sql` (données fictives) en production.
+- Modifier, commiter ou pousser du code depuis la VM (`git commit`, `git push`, `git reset --hard`, `git stash` sur des fichiers suivis) : signaler toute modification locale à Beni.
+- Écrire sur les pointeuses (effacer pointages ou utilisateurs) : le worker les lit seulement, et règle seulement l'horloge.
+- Toucher au réseau : routes de la VM (pas de route `10.0.4.0/24 via 10.169.153.244`, supprimée le 14 oct. 2026), MikroTik, switchs, pare-feu. Toute commande réseau se propose à Beni, elle ne se lance pas.
+- Utiliser un nouveau port sans vérifier qu'il est libre (`sudo ss -tulpn`) ; ne jamais utiliser 7080.
+- Lancer `python3 worker/sync.py` sans l'option `--sauvegarde` à côté du worker en marche (deux connexions aux pointeuses).
+
+### A. Mise à jour du serveur (cas habituel)
+
+À utiliser quand `~/liquid-attendance/data/mariadb` existe déjà (`test -d ~/liquid-attendance/data/mariadb && echo existe`). Sinon, voir « Installation sur la VM » plus bas.
+
+**Étape 1 : contrôles avant de commencer.**
+
+```bash
+cd ~/liquid-attendance
+git status --short                      # attendu : rien (aucune modification locale)
+git branch --show-current               # attendu : main
+sudo docker compose ps                  # attendu : la-app, la-worker, la-db… « Up » (la-db « healthy »)
+df -h / | tail -1                       # attendu : au moins 2 Go libres
+ip route get 10.0.4.18                  # attendu : … dev ens19 src 10.0.4.249
+```
+
+Si `git status` affiche des fichiers, si la branche n'est pas `main` ou s'il reste moins de 2 Go : **s'arrêter et signaler**. Un conteneur arrêté n'empêche pas la mise à jour, mais le noter dans le compte rendu.
+
+**Étape 2 : sauvegarde de sécurité de la base (obligatoire).**
+
+Cette commande marche quelle que soit la version du code (elle ne passe pas par le worker) :
+
+```bash
+mkdir -p ~/sauvegardes-maj
+sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction liquid_attendance' \
+  | gzip > ~/sauvegardes-maj/avant-maj_$(date +%F_%H%M).sql.gz
+gzip -t ~/sauvegardes-maj/avant-maj_*.sql.gz && ls -lh ~/sauvegardes-maj/ | tail -3
+```
+
+Attendu : `gzip -t` silencieux et un fichier de plus de quelques Ko. Sinon : **s'arrêter**, ne pas mettre à jour sans sauvegarde.
+
+**Étape 3 : noter la version en place (pour un retour arrière).**
+
+```bash
+git rev-parse --short HEAD              # noter cette valeur : ANCIEN
+```
+
+**Étape 4 : récupérer le code.**
+
+```bash
+git pull --ff-only
+git log --oneline ANCIEN..HEAD          # remplacer ANCIEN : liste des changements reçus
+git diff --stat ANCIEN..HEAD -- database/migrations docker-compose.yml docker .env.example
+```
+
+Si `git pull --ff-only` échoue (historique divergent) : **s'arrêter et signaler**, ne pas forcer. La dernière commande montre ce qui demande une attention : nouvelles migrations, nouveaux réglages, images Docker modifiées.
+
+**Étape 5 : nouveaux réglages du `.env`.**
+
+```bash
+comm -23 <(grep -oE '^[A-Z_]+' .env.example | sort -u) <(grep -oE '^[A-Z_]+' .env | sort -u)
+```
+
+Affiche les réglages présents dans `.env.example` mais absents du `.env`. Ils ont tous une valeur par défaut dans le code : **ne rien ajouter** sans instruction, sauf si le message de commit ou Beni le demande. Ne jamais afficher le contenu du `.env` (mots de passe) dans un compte rendu.
+
+**Étape 6 : migrations de la base (avant de reconstruire).**
+
+Toutes les migrations sont rejouables sans risque : on les applique **toutes, dans l'ordre**, à chaque mise à jour. La boucle s'arrête à la première erreur.
+
+```bash
+mkdir -p data/backups
+for f in $(ls database/migrations/*.sql | sort); do
+  echo "== $f"
+  sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < "$f" \
+    || { echo "ÉCHEC : $f"; break; }
+done
+```
+
+Attendu : une ligne `== …` par fichier et aucun `ÉCHEC`. En cas d'échec : **ne pas reconstruire**, ne pas modifier la migration, copier le message d'erreur et le signaler (l'application en place continue de tourner).
+
+**Étape 7 : reconstruire et relancer l'application et le worker.**
+
+```bash
+sudo docker compose up -d --build app worker
+```
+
+Ne relance que `la-app` et `la-worker` ; la base n'est pas redémarrée. Si `docker-compose.yml` a changé pour `db`, `phpmyadmin` ou `acme` (étape 4), lancer ensuite `sudo docker compose up -d` (sans `down`).
+
+**Étape 8 : vérifications.**
+
+```bash
+sudo docker compose ps                                                     # tous « Up », la-db « healthy »
+curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1:8443/connexion  # attendu : 200
+sleep 90; sudo docker compose logs --since 3m worker | grep -E "synchro complète|ERREUR" | tail -20
+```
+
+Attendu dans le journal du worker : une ligne « synchro complète » pour chaque pointeuse d'étage (10.0.4.18, .20, .7, .15). Des erreurs sur 10.0.4.4 et 10.0.4.5 (F16, NOC et IT Room) sont connues et ne bloquent rien. Des erreurs « base de données » ou sur les pointeuses d'étage : passer au retour arrière ou signaler.
+
+Contrôle dans le navigateur (compte admin) : https://10.169.153.144:8443/etat-du-service : service « En marche », pointeuses d'étage « en écoute ».
+
+**Étape 9 : compte rendu à Beni.** Indiquer : version avant (ANCIEN) et après (`git rev-parse --short HEAD`), nom du fichier de sauvegarde de l'étape 2, migrations appliquées, résultat de chaque vérification de l'étape 8, réglages `.env` manquants signalés à l'étape 5, et toute anomalie.
+
+### B. Retour arrière
+
+Les migrations ne font qu'ajouter (colonnes, tables, index) : l'ancien code fonctionne avec la base migrée. On revient donc d'abord sur **le code seul**.
+
+```bash
+cd ~/liquid-attendance
+git checkout ANCIEN                     # version notée à l'étape 3 (« detached HEAD » est normal)
+sudo docker compose up -d --build app worker
+```
+
+Puis refaire les vérifications de l'étape 8 et prévenir Beni. Pour revenir ensuite sur la branche : `git checkout main`.
+
+Restaurer la base de l'étape 2 **seulement si Beni le demande** (les badges reçus depuis la sauvegarde seront repris des pointeuses à la synchro suivante, mais les saisies faites dans la plateforme depuis seront perdues) :
+
+```bash
+sudo docker compose stop app worker
+gunzip -c ~/sauvegardes-maj/avant-maj_AAAA-MM-JJ_HHMM.sql.gz \
+  | sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance'
+sudo docker compose start app worker
+```
+
+### C. Changer de serveur (migration vers une nouvelle machine)
+
+Seulement sur instruction de Beni. Le nouveau serveur doit avoir : Docker et le plugin compose, accès au VLAN 3602 (carte dédiée, adresse en 10.0.4.x **sans passerelle** ; à demander à l'équipe réseau, ne pas le configurer soi-même) et les ports 8443, 8088 et 8090 libres (`sudo ss -tulpn`).
+
+1. **Ancien serveur** : étapes 1 et 2 de la partie A (sauvegarde), puis arrêter la plateforme pour figer les données : `sudo docker compose stop app worker` (la base reste en marche) ; refaire l'étape 2 pour avoir une sauvegarde finale.
+2. **Copier** vers le nouveau serveur, par `scp` : la sauvegarde finale, le fichier `.env`, et les dossiers `data/storage` (photos et fichiers du parc) et `data/certs`. Ne pas copier `data/mariadb` (les fichiers bruts de la base dépendent de la version : on passe par la sauvegarde).
+3. **Nouveau serveur** : `git clone https://github.com/Nyombi1997/liquid-attendance.git ~/liquid-attendance`, y placer `.env` et les dossiers `data/storage`, `data/certs`, puis `mkdir -p data/backups`.
+4. Démarrer la base seule et attendre « healthy » : `sudo docker compose up -d db` puis `sudo docker compose ps db`. Elle se crée vide avec `schema.sql` et `seed.sql`.
+5. Charger la sauvegarde (elle remplace les tables créées à l'étape 4) : commande `gunzip -c … | … mariadb …` de la partie B.
+6. Appliquer les migrations (étape 6 de la partie A), puis `sudo docker compose up -d --build`, puis les vérifications de l'étape 8.
+7. **Ancien serveur** : laisser la plateforme arrêtée (deux workers connectés aux mêmes pointeuses se gênent). Ne supprimer ses données qu'après accord écrit de Beni.
+8. Mettre à jour l'adresse du serveur dans `README.md`, `CLAUDE.md` et `docs/CADRAGE.md` (à faire sur le poste de développement, pas sur le serveur).
+
+---
+
 ## Installation sur la VM (10.169.153.144)
+
+Première installation seulement (aucun dossier `data/mariadb`). Pour une mise à jour, voir la partie A ci-dessus.
 
 La plateforme cohabite avec ELK sans réutiliser aucun de ses ports :
 
@@ -225,13 +386,13 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 | Sauvegarder la base tout de suite | `sudo docker compose exec worker python3 worker/sync.py --sauvegarde` (fichier dans `./data/backups`) |
 | Tâches du parc automobile (rappels, alertes, e-mails) à la main | `sudo docker compose exec worker php bin/fleet-tasks.php` (lancé seul toutes les 60 s par le worker) |
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
-| Mettre à jour | `git pull`, appliquer les migrations nouvelles (ci-dessous), puis `sudo docker compose up -d --build` |
+| Mettre à jour | procédure complète : « Déploiement : procédure à suivre », partie A (sauvegarde, `git pull --ff-only`, migrations, `up -d --build app worker`, vérifications) |
 | Réinitialiser un mot de passe admin | `sudo docker compose exec -it app php bin/create-admin.php <identifiant>` |
 | Arrêter la plateforme (ELK n'est pas touché) | `sudo docker compose down` |
 
 ### Appliquer une migration sur une base existante
 
-`database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide). Les changements de structure arrivent ensuite sous forme de fichiers `database/migrations/NNN_*.sql`, à appliquer une fois, dans l'ordre, après le `git pull` et **avant** de reconstruire les conteneurs (le nouveau code utilise les nouvelles colonnes) :
+Dans une mise à jour, c'est l'étape 6 de la partie A (boucle sur tous les fichiers). `database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide). Les changements de structure arrivent ensuite sous forme de fichiers `database/migrations/NNN_*.sql`, à appliquer une fois, dans l'ordre, après le `git pull` et **avant** de reconstruire les conteneurs (le nouveau code utilise les nouvelles colonnes) :
 
 ```bash
 sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
