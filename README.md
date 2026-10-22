@@ -118,6 +118,12 @@ Cahier des charges : [`docs/Cahier_des_charges_Fleet.pdf`](docs/Cahier_des_charg
 - **Mission** (`/flotte/missions`, écran pour téléphone) : le chauffeur (ou le demandeur qui conduit) **démarre** puis **clôture** la mission avec le **kilométrage**, le **niveau de carburant**, la **photo du compteur** (réduite dans le téléphone) et l'**état du véhicule**. Le kilométrage de retour doit être supérieur à celui du départ. Un véhicule déclaré en panne à la clôture passe « en panne » et les gestionnaires sont prévenus.
 - **Sans réseau** : la saisie de démarrage ou de clôture est **gardée dans le téléphone** (IndexedDB) puis envoyée dans l'ordre **dès le retour du réseau** (avec l'heure réelle de la saisie ; un double envoi est ignoré). L'écran de mission déjà ouvert une fois reste consultable hors réseau (service worker). Une pastille dans l'en-tête indique les saisies en attente.
 - **Référentiels** : **véhicules** (immatriculation, marque, modèle, année, type, places, carburant, réservoir, consommation de référence en L/100 km, kilométrage, état, identifiant du tracker GPS pour le module 2), **documents** (assurance, contrôle technique : date d'expiration, fichier, **alerte 30 jours avant**), **chauffeurs** (employé, permis, catégories, expiration avec alerte, véhicules autorisés, note moyenne).
+- **Import CSV** (`/flotte/import`, administrateur et gestionnaire de flotte ; lien « Importer (CSV) » sur les pages Véhicules, Chauffeurs et Départements) : trois listes, chacune avec son **modèle CSV téléchargeable** :
+  - **Organisation** : `Direction ; Service ; N+1` (direction créée si absente, service créé ou rattaché à la direction, N+1 du service, ou de la direction si Service est vide) ;
+  - **Véhicules** : `Immatriculation ; Marque ; Modèle ; Année ; Carburant ; Réservoir (L) ; Consommation de référence (L/100 km) ; Statut ; Échéance assurance ; Échéance contrôle technique` (une échéance nouvelle ajoute un document d'assurance ou de contrôle technique, sans fichier) ;
+  - **Chauffeurs** : `Employé ; N° de permis ; Catégorie ; Date d'expiration`.
+
+  Séparateur `;`, `,` ou tabulation et encodage UTF-8, UTF-16 ou Windows-1252 (CSV d'Excel) **détectés automatiquement** ; dates JJ/MM/AAAA ou AAAA-MM-JJ ; employé désigné par son nom (casse, accents et ordre des mots libres) ou son n° de pointeuse. Un **aperçu** montre, avant tout enregistrement, les créations, les **mises à jour de fiches existantes** (ancienne → nouvelle valeur ; une cellule vide ne change rien), les lignes inchangées et les **erreurs ligne par ligne** (employé introuvable ou homonyme, date invalide, doublon d'immatriculation, véhicule en mission…). **Rien n'est enregistré avant la confirmation** ; seules les lignes valides le sont, en **une transaction**, après une nouvelle analyse sous verrou (si les données ont changé depuis l'aperçu, rien n'est enregistré et un nouvel aperçu s'affiche). Chaque import est noté dans le journal d'activité (`import_organisation`, `import_vehicules`, `import_chauffeurs`). Fichier de 1 Mo et 2000 lignes au plus. Lecture et analyse dans `Services/FleetImport.php`, testées sans base par `php tests/FleetImportTest.php`.
 - **Notifications** : dans la **cloche** de l'en-tête (au-dessus des badges du jour) et **par e-mail** si un serveur SMTP est configuré dans `.env` (sinon rien n'est envoyé) : demande reçue, approuvée, refusée, véhicule affecté, **rappel 1 h avant le départ**, mission terminée, panne, documents et permis à renouveler. Les e-mails, rappels et alertes sont envoyés par le worker (`bin/fleet-tasks.php`, toutes les 60 s).
 - **Historique complet** de chaque demande (qui a fait quoi et quand), en plus du journal d'activité.
 - **Tableau de bord** (`/flotte`) : véhicules disponibles, en mission, en panne, en entretien ; demandes en attente par étape ; **délais moyens création → validation → affectation** (90 jours) ; départs du jour ; documents et permis à renouveler ; kilomètres et note du mois.
@@ -136,7 +142,7 @@ Ils s'ajoutent au rôle de la plateforme (champ « Rôle Parc automobile » du c
 
 L'**administrateur** a les droits du gestionnaire et règle les **paramètres** du circuit ; le **CEO** consulte le tableau de bord, le registre, le planning, les véhicules et les chauffeurs.
 
-Les règles du circuit et des conflits sont dans `app/Modules/Fleet/Services/FleetWorkflow.php` et `Availability.php`, testées sans base par `php tests/FleetWorkflowTest.php`. Données d'exemple (comptes, véhicules, demandes à tous les stades) : `database/seed_fleet_demo.sql`, **à ne jamais charger en production**.
+Les règles du circuit et des conflits sont dans `app/Modules/Fleet/Services/FleetWorkflow.php` et `Availability.php`, testées sans base par `php tests/FleetWorkflowTest.php` ; l'import CSV dans `FleetImport.php`, testé par `php tests/FleetImportTest.php`. Données d'exemple (comptes, véhicules, demandes à tous les stades) : `database/seed_fleet_demo.sql`, **à ne jamais charger en production**.
 
 ---
 
@@ -446,9 +452,10 @@ app/
       Views/
     Fleet/                 module Parc automobile
       Controllers/         Dashboard, Request (demandes, validation, registre), Assignment (affectation, planning),
-                           Mission (écran chauffeur), Vehicle, Driver, Settings
+                           Mission (écran chauffeur), Vehicle, Driver, Settings, Import (import CSV)
       Services/            FleetWorkflow (circuit, testé), Availability (conflits, testé), Timeline (frise), Fleet (données, droits),
-                           FleetNotify (destinataires), FleetFiles (fichiers hors de public/), FleetStats (tableau de bord)
+                           FleetNotify (destinataires), FleetFiles (fichiers hors de public/), FleetStats (tableau de bord),
+                           FleetImport (lecture et analyse des CSV, testé)
       Views/
   Core/Mailer.php          envoi SMTP sans dépendance (utilisé par le worker)
   Views/                   gabarit commun, pages d'erreur
@@ -459,7 +466,7 @@ docker/                    images app (Apache + HTTPS) et worker
 public/                    point d'entrée, CSS, JS, PWA (manifest, service worker, icônes), assets/vendor/fontawesome (Font Awesome Free 6.7.2, servi localement)
 storage/                   fichiers déposés (photos) ; en production : volume ./data/storage
 worker/                    sync.py (connexion permanente aux pointeuses, calculs, battement de cœur, sauvegarde nocturne), run.sh (lancement)
-tests/                     règles de calcul, cases du calendrier, circuit du parc automobile (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
+tests/                     règles de calcul, cases du calendrier, circuit et import CSV du parc automobile (PHP) ; worker avec un faux module zk (tests/fakezk, hors image Docker)
 ```
 
 Le module Leave aura son dossier dans `app/Modules/` et réutilisera, comme Fleet, la table `employees`, les comptes et le gabarit.

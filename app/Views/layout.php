@@ -53,6 +53,7 @@ $nav = [
         ['/flotte/planning', 'timeline', 'Planning', ['/flotte/planning'], 'fleet_board'],
         ['/flotte/vehicules', 'car', 'Véhicules', ['/flotte/vehicules', '/flotte/documents'], 'fleet_board'],
         ['/flotte/chauffeurs', 'id-card', 'Chauffeurs', ['/flotte/chauffeurs'], 'fleet_board'],
+        ['/flotte/import', 'arrow-in', 'Import CSV', ['/flotte/import'], 'fleet_manage'],
         ['/flotte/parametres', 'filter', 'Paramètres', ['/flotte/parametres'], 'admin'],
     ],
     'Modules' => [

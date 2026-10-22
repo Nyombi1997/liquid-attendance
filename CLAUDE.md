@@ -88,7 +88,7 @@ bin/fleet-tasks.php          parc automobile : rappels avant départ, alertes d'
 bin/create-admin.php         création / réinitialisation d'un compte admin
 worker/sync.py, run.sh       service de synchronisation (conteneur la-worker)
 database/schema.sql, seed.sql, migrations/NNN_*.sql, seed_fleet_demo.sql (démonstration, JAMAIS en production)
-tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkflowTest.php ; test_sync.py + faux module zk (tests/fakezk)
+tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkflowTest.php, FleetImportTest.php ; test_sync.py + faux module zk (tests/fakezk)
 ```
 
 **Rôles et droits** (`Auth::ROLES`, droit = 3e argument de la route ; POST = `manage` par défaut) :
@@ -115,7 +115,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 | `fleet_validate` | fleet:validateur, fleet:direction, tout responsable (N+1) d'un département | entrée de menu « À valider » |
 | `fleet_drive` | fleet:chauffeur | entrée de menu « Mes missions » |
 | `fleet_board` | admin, ceo, fleet:gestionnaire, fleet:direction | tableau de bord `/flotte`, `/flotte/registre`, `/flotte/planning`, `/flotte/vehicules`, `/flotte/chauffeurs` |
-| `fleet_manage` | admin, fleet:gestionnaire | `/flotte/demandes/{id}/affecter`, POST véhicules, documents, chauffeurs |
+| `fleet_manage` | admin, fleet:gestionnaire | `/flotte/demandes/{id}/affecter`, POST véhicules, documents, chauffeurs, import CSV `/flotte/import…` (organisation comprise) |
 
 - `employe` : rôle de base du module Parc automobile seulement (demandeurs, chauffeurs) ; compte relié obligatoirement à une fiche (`users.employee_id`). Accueil : `/flotte` (chauffeur : `/flotte/missions`).
 - `ceo` : tout voir (sauf le calendrier), ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements : Agents, tableau de bord, présence du jour, Calendrier, Employés en lecture. `rh` : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture. RH et managers : aucune rubrique `view` (sorties manquantes, modules…), et « sortie manquante » s'affiche « Présent »/« Retard » (`status_info()`).
@@ -151,7 +151,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 
 **Règles de calcul (DayCalculator)** : arrivée = premier badge « entrée » ; départ = dernier badge « sortie » après l'arrivée, ou heure corrigée ; retard compté depuis le début si arrivée > début + tolérance ; pause déduite ; heures sup après la fin si ≥ seuil ; jour non travaillé = « repos » (ou « hors horaire » si badge) ; pas de sortie = « en cours » toute la journée (le temps avance sans attendre de sortie) puis « sortie manquante » (0 heure tant que non corrigée) ; une entrée badgée après la dernière sortie (agent revenu) annule cette sortie. Agent désactivé (`employees.active = 0`, case « Agent actif » de « Modifier la fiche » sur /agents ou de « Modifier l'employé ») : plus calculé ni affiché (pages, cloche, /api/direct, calendrier).
 
-**Services (Fleet)** : `FleetWorkflow` (circuit pur, testé : seuils de la direction, N+1, refus, urgence, clôture), `Availability` (conflits et indisponibilités, pur, testé), `Timeline` (positions de la frise), `Fleet` (données, réservations, droits sur une demande `access()`, historique `event()`), `FleetNotify` (destinataires de chaque étape), `FleetFiles` (fichiers hors de public/), `FleetStats` (tableau de bord).
+**Services (Fleet)** : `FleetWorkflow` (circuit pur, testé : seuils de la direction, N+1, refus, urgence, clôture), `Availability` (conflits et indisponibilités, pur, testé), `FleetImport` (import CSV pur, testé : encodage et séparateur détectés, dates JJ/MM/AAAA ou AAAA-MM-JJ, employé par nom ou n° de pointeuse, plan par ligne ; appliqué par `ImportController` en transaction après nouvelle analyse sous verrou et comparaison de l'empreinte de l'aperçu), `Timeline` (positions de la frise), `Fleet` (données, réservations, droits sur une demande `access()`, historique `event()`), `FleetNotify` (destinataires de chaque étape), `FleetFiles` (fichiers hors de public/), `FleetStats` (tableau de bord).
 
 **Règles du circuit (FleetWorkflow)** : N+1 = responsable du service du demandeur (en remontant l'arbre si le demandeur est lui-même responsable ou si personne n'est désigné) ; direction en plus si hors ville, plus de `fleet_direction_max_days` jours (2) ou week-end ; sans N+1 avec compte : direction directement ; refus avec motif obligatoire ; personne ne valide sa propre demande ; urgence : affectation possible avant validation (`assigned_before_validation`), validation a posteriori ; un refus avant le départ libère le véhicule. Affectation en transaction avec `SELECT … FOR UPDATE` (demande, véhicule, chauffeur) et contrôles refaits sous verrou.
 
@@ -193,7 +193,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 - Développement sur le poste → commit → je fais moi-même git push.
 - Déploiement sur la VM : procédure détaillée et interdits dans README.md, section « Déploiement : procédure à suivre » (sauvegarde, git pull --ff-only, toutes les migrations dans l'ordre, sudo docker compose up -d --build app worker, vérifications, retour arrière). En résumé : cd ~/liquid-attendance && git pull --ff-only && (migrations) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
 - Le .env n'est pas dans git : il se modifie uniquement sur la VM.
-- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
+- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php tests/FleetImportTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
 - À la fin de chaque tâche, donne-moi les commandes exactes à lancer sur la VM, dans l'ordre.
 
 Commande de migration (sur la VM, depuis ~/liquid-attendance) :
@@ -215,6 +215,7 @@ D'après docs/CADRAGE.md (état au 22 oct. 2026) :
 - 13 oct. 2026 : rapport Excel (.xlsx) de la page Agents (`/agents/export`, droit `export` : admin et RH) avec période (du/au, 93 jours max), filtre (arrivés, à l'heure, en retard, pas arrivés, télétravail, mission, congé), département et agent ; une ligne par agent et par jour + récapitulatif par agent ; classeur écrit par `App\Core\Xlsx` (sans extension zip).
 - 20 oct. 2026 : **Parc automobile, module 1** (migration `005_flotte.sql`) : directions/services et N+1, rôle `employe`, compte relié à une fiche, rôles Parc automobile ; véhicules, documents (alerte 30 j), chauffeurs ; demandes (ordre de mission), circuit N+1 → direction (hors ville, > 2 jours, week-end), refus motivé, urgence validée a posteriori ; affectation avec frise et verrou anti-double réservation, planning ; écran mission téléphone avec saisie hors réseau (IndexedDB) ; cloche + e-mails SMTP (`SMTP_*` dans .env) + rappel 1 h avant (worker) ; évaluation ; historique ; tableau de bord et paramètres.
 - 22 oct. 2026 : **nouvelle architecture réseau** (14 oct. : VLAN 102 et 4040 retirés de gi17, MikroTik injoignable depuis le VLAN 102 ; VM reliée directement au VLAN 3602 par ens19 = 10.0.4.249/24 ; publication Internet par la DMZ VLAN 3604, en attente) ; worker : remise à l'heure au démarrage (> 30 s), F16 en délai long et journal détaillé, tentatives toutes les 30 min après 5 échecs, battement de cœur, sauvegarde nocturne de la base (02:00, `./data/backups`, 14 jours) ; page Administration › État du service (`/etat-du-service`). Aucune migration (valeurs dans `settings`).
+- 22 oct. 2026 (suite) : **import CSV du parc automobile** (`/flotte/import`, droit `fleet_manage`) : organisation (direction ; service ; N+1), véhicules (avec échéances assurance et contrôle technique), chauffeurs ; modèle téléchargeable, aperçu (créations, mises à jour, erreurs ligne par ligne), rien d'enregistré avant confirmation, transaction + `Audit::log('import_…')`. Aucune migration.
 - Questions ouvertes : sous-réseau de la DMZ (VLAN 3604) à fournir par la sécurité ; horaires réels et groupes à saisir ; parc automobile : nombre de véhicules et de sites, trackers GPS, serveur SMTP à fournir, anglais de l'interface ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

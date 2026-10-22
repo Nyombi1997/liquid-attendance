@@ -10,6 +10,7 @@ use App\Modules\Fleet\Services\FleetWorkflow;
   <div class="head-actions">
     <a class="btn btn-outline" href="/flotte/planning"><?= fa('fa-solid fa-calendar-days') ?> Planning</a>
     <?php if (can('fleet_manage')): ?>
+      <a class="btn btn-outline" href="/flotte/import"><?= fa('fa-solid fa-file-import') ?> Importer (CSV)</a>
       <button class="btn btn-primary" type="button" data-dialog="new-vehicle"><?= icon('plus') ?> Nouveau véhicule</button>
     <?php endif; ?>
   </div>

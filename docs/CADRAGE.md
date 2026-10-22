@@ -26,6 +26,7 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Publication Internet par la DMZ (VLAN 3604) + certificat Let's Encrypt | **En attente** : sous-réseau de la DMZ à fournir par l'équipe sécurité (README, étapes 4 et 5) |
 | Sécuriser Kibana (liste d'IP ou login) | À faire |
 | Parc automobile, module 1 « Demande et octroi de véhicule » : directions/services et N+1, rôle `employe` et rôles Parc automobile, véhicules (documents avec alerte 30 j), chauffeurs, demandes avec ordre de mission, circuit N+1 → direction, refus motivé, urgence validée a posteriori, affectation avec frise et verrou anti-double réservation, planning, écran mission sur téléphone avec saisie hors réseau, cloche + e-mails + rappel 1 h avant, évaluation, historique, tableau de bord | **Fait** le 20 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px, hors réseau simulé, faux SMTP) ; migration `005_flotte.sql` à appliquer sur la VM ; SMTP à configurer dans `.env` |
+| Parc automobile, import CSV de l'organisation, des véhicules et des chauffeurs (modèles, aperçu avant validation, erreurs ligne par ligne, transaction, journal) | **Fait** le 22 oct. 2026, testé en local (MariaDB, fichiers UTF-8 et Windows-1252, séparateurs « ; » et « , », rôles admin / gestionnaire / CEO / demandeur, Chrome 1280 et 390 px) ; aucune migration |
 | Parc automobile, modules 2 à 4 (GPS, alertes de mouvement, carburant) | À faire : trackers à choisir ; colonnes déjà prévues (`fleet_vehicles.tracker_id`, `ref_consumption`, `tank_liters`) |
 | Module Congés | Priorité 3 |
 

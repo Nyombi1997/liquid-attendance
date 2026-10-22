@@ -46,6 +46,7 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 
 ### Parc automobile (`app/Modules/Fleet`)
 - **Règles dans les services purs** `FleetWorkflow` (circuit) et `Availability` (conflits) : les contrôleurs lisent la demande, appellent la règle, enregistrent les champs renvoyés. Toute nouvelle règle y va, avec son test dans `tests/FleetWorkflowTest.php`. Pas de règle métier en JavaScript.
+- **Import CSV** (`/flotte/import`, `ImportController`) : lecture et analyse dans le service pur `FleetImport` (testé par `tests/FleetImportTest.php`) ; le fichier lu est gardé en session, rien n'est écrit avant la confirmation ; à la confirmation, nouvelle analyse sous verrou (`FOR UPDATE`) dans la transaction, enregistrement seulement si l'empreinte (`FleetImport::fingerprint()`) est celle de l'aperçu. Une nouvelle colonne importable se déclare dans `FleetImport::KINDS` (en-tête du modèle et autres noms acceptés).
 - **Transitions** d'une demande dans une transaction, ligne verrouillée (`SELECT … FOR UPDATE`, voir `RequestController::transition()`) ; affectation : verrous demande → véhicule → chauffeur, dans cet ordre, contrôles refaits sous verrou.
 - Chaque étape : `Fleet::event()` (historique de la demande) **et** `Audit::log()` ; notification par `FleetNotify` (jamais d'e-mail envoyé pendant la requête : file `notifications`, envoi par `bin/fleet-tasks.php` dans le worker).
 - Fichiers (ordres de mission, documents, photos des compteurs) : `FleetFiles` (contrôle du contenu, 5 Mo, hors de `public/`), servis par un contrôleur après `Fleet::access()` ; PDF toujours en téléchargement.
@@ -110,6 +111,7 @@ node --check public/assets/js/app.js                                           #
 php tests/DayCalculatorTest.php                                               # règles de calcul
 php tests/CalendarTest.php                                                    # cases du calendrier
 php tests/FleetWorkflowTest.php                                               # circuit et conflits du parc
+php tests/FleetImportTest.php                                                 # import CSV du parc (dates, séparateurs, accents)
 python3 tests/test_sync.py                                                    # worker (faux module zk)
 ```
 

@@ -115,6 +115,12 @@ $r->get('/flotte/documents/{id}', [F\VehicleController::class, 'document'], 'fle
 $r->get('/flotte/chauffeurs', [F\DriverController::class, 'index'], 'fleet_board');
 $r->post('/flotte/chauffeurs', [F\DriverController::class, 'store'], 'fleet_manage');
 $r->post('/flotte/chauffeurs/{id}', [F\DriverController::class, 'update'], 'fleet_manage');
+$r->get('/flotte/import', [F\ImportController::class, 'index'], 'fleet_manage');
+$r->get('/flotte/import/modele', [F\ImportController::class, 'template'], 'fleet_manage');
+$r->post('/flotte/import', [F\ImportController::class, 'upload'], 'fleet_manage');
+$r->get('/flotte/import/apercu', [F\ImportController::class, 'preview'], 'fleet_manage');
+$r->post('/flotte/import/confirmer', [F\ImportController::class, 'confirm'], 'fleet_manage');
+$r->post('/flotte/import/annuler', [F\ImportController::class, 'cancel'], 'fleet_manage');
 $r->get('/flotte/parametres', [F\SettingsController::class, 'index'], 'admin');
 $r->post('/flotte/parametres', [F\SettingsController::class, 'update'], 'admin');
 

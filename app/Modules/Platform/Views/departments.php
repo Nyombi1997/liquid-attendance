@@ -31,6 +31,7 @@ $kindField = static fn(string $kind): string => '<label class="field"><span>Type
   </div>
   <div class="head-actions">
     <a class="btn btn-outline" href="/agents"><?= fa('fa-solid fa-id-card') ?> Voir les agents</a>
+    <?php if (can('fleet_manage')): ?><a class="btn btn-outline" href="/flotte/import"><?= fa('fa-solid fa-file-import') ?> Importer (CSV)</a><?php endif; ?>
     <button class="btn btn-primary" type="button" data-dialog="new-dept"><?= icon('plus') ?> Nouveau département</button>
   </div>
 </div>

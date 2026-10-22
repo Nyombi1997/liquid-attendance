@@ -20,7 +20,10 @@ $plates = array_column($vehicles, 'plate', 'id');
     <p class="muted">Permis, véhicules autorisés et missions. Pour voir ses missions sur son téléphone, un chauffeur a besoin d'un compte relié à sa fiche, avec le rôle Parc automobile « Chauffeur ».</p>
   </div>
   <?php if (can('fleet_manage')): ?>
-    <button class="btn btn-primary" type="button" data-dialog="new-driver"><?= icon('plus') ?> Nouveau chauffeur</button>
+    <div class="head-actions">
+      <a class="btn btn-outline" href="/flotte/import"><?= fa('fa-solid fa-file-import') ?> Importer (CSV)</a>
+      <button class="btn btn-primary" type="button" data-dialog="new-driver"><?= icon('plus') ?> Nouveau chauffeur</button>
+    </div>
   <?php endif; ?>
 </div>
 
