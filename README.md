@@ -150,6 +150,8 @@ Les règles du circuit et des conflits sont dans `app/Modules/Fleet/Services/Fle
 
 Cette section se suit **telle quelle, étape par étape**, sans improviser. Chaque étape donne la commande, le résultat attendu et quoi faire si le résultat est différent. En cas de doute : **s'arrêter et demander** à Beni, ne jamais « réparer » au hasard.
 
+> **Lancer les étapes une par une**, jamais toutes les commandes collées d'un bloc : `sudo` demande le mot de passe au milieu du bloc (invite `[sudo: authenticate] Mot de passe :`, rien ne s'affiche pendant la frappe), le terminal semble alors bloqué. Donner le mot de passe **au début** avec `sudo -v` (valable environ 15 minutes ; à refaire si la demande réapparaît). Un assistant IA sans terminal interactif ne peut pas saisir ce mot de passe : il donne les commandes à Beni au lieu de les lancer.
+
 ### Contexte fixe
 
 | Élément | Valeur |
@@ -184,6 +186,7 @@ Cette section se suit **telle quelle, étape par étape**, sans improviser. Chaq
 
 ```bash
 cd ~/liquid-attendance
+sudo -v                                 # mot de passe de ubuntu01 (invisible), une fois pour toute la procédure
 git status --short                      # attendu : rien (aucune modification locale)
 git branch --show-current               # attendu : main
 sudo docker compose ps                  # attendu : la-app, la-worker, la-db… « Up » (la-db « healthy »)
@@ -204,7 +207,7 @@ sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSW
 gzip -t ~/sauvegardes-maj/avant-maj_*.sql.gz && ls -lh ~/sauvegardes-maj/ | tail -3
 ```
 
-Attendu : `gzip -t` silencieux et un fichier de plus de quelques Ko. Sinon : **s'arrêter**, ne pas mettre à jour sans sauvegarde.
+Attendu : `gzip -t` silencieux et un fichier de plus de quelques Ko. Un fichier de quelques dizaines d'octets est une sauvegarde **vide** (commande interrompue, par exemple par Ctrl+C pendant la demande de mot de passe) : le supprimer (`find ~/sauvegardes-maj -name 'avant-maj_*.sql.gz' -size -1k -delete`) et recommencer cette étape. Sinon : **s'arrêter**, ne pas mettre à jour sans sauvegarde.
 
 **Étape 3 : noter la version en place (pour un retour arrière).**
 
