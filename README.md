@@ -182,6 +182,15 @@ Cette section se suit **telle quelle, étape par étape**, sans improviser. Chaq
 
 À utiliser quand `~/liquid-attendance/data/mariadb` existe déjà (`test -d ~/liquid-attendance/data/mariadb && echo existe`). Sinon, voir « Installation sur la VM » plus bas.
 
+**Étape 0 : sur le poste de développement, vérifier que le code est sur GitHub.**
+
+```bash
+cd ~/projects/liquid-attendance
+git status -sb | head -1                # attendu : « ## main...origin/main », sans « devant » ni « HEAD détachée »
+```
+
+« devant N » : Beni doit d'abord lancer `git push`. « HEAD (aucune branche) » / « HEAD détachée » : les commits ne sont sur aucune branche et ne partiront pas ; les remettre sur `main` (`git checkout main && git merge --ff-only <dernier commit>`) puis `git push`. Sinon la VM ne recevra rien.
+
 **Étape 1 : contrôles avant de commencer.**
 
 ```bash
@@ -202,10 +211,12 @@ Cette commande marche quelle que soit la version du code (elle ne passe pas par 
 
 ```bash
 mkdir -p ~/sauvegardes-maj
-sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction liquid_attendance' \
+sudo docker compose exec -T db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction liquid_attendance' < /dev/null \
   | gzip > ~/sauvegardes-maj/avant-maj_$(date +%F_%H%M).sql.gz
 gzip -t ~/sauvegardes-maj/avant-maj_*.sql.gz && ls -lh ~/sauvegardes-maj/ | tail -3
 ```
+
+Le `< /dev/null` est indispensable : sans lui, `docker compose exec` garde le clavier branché sur le conteneur et la commande peut rester bloquée sans rien afficher. Durée normale : quelques secondes à une minute.
 
 Attendu : `gzip -t` silencieux et un fichier de plus de quelques Ko. Un fichier de quelques dizaines d'octets est une sauvegarde **vide** (commande interrompue, par exemple par Ctrl+C pendant la demande de mot de passe) : le supprimer (`find ~/sauvegardes-maj -name 'avant-maj_*.sql.gz' -size -1k -delete`) et recommencer cette étape. Sinon : **s'arrêter**, ne pas mettre à jour sans sauvegarde.
 
@@ -223,7 +234,7 @@ git log --oneline ANCIEN..HEAD          # remplacer ANCIEN : liste des changemen
 git diff --stat ANCIEN..HEAD -- database/migrations docker-compose.yml docker .env.example
 ```
 
-Si `git pull --ff-only` échoue (historique divergent) : **s'arrêter et signaler**, ne pas forcer. La dernière commande montre ce qui demande une attention : nouvelles migrations, nouveaux réglages, images Docker modifiées.
+Si `git pull --ff-only` échoue (historique divergent) : **s'arrêter et signaler**, ne pas forcer. Si la liste des changements reçus est vide alors qu'une mise à jour est attendue : le code n'est pas sur GitHub (voir l'étape 0). La dernière commande montre ce qui demande une attention : nouvelles migrations, nouveaux réglages, images Docker modifiées.
 
 **Étape 5 : nouveaux réglages du `.env`.**
 
