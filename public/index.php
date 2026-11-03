@@ -36,6 +36,8 @@ $r->get('/conges', [P\ModuleController::class, 'leave']);
 
 // Employés et groupes (liste commune à tous les modules)
 $r->get('/employes', [A\EmployeeController::class, 'index'], 'staff');
+$r->get('/employes/nouveau', [A\EmployeeController::class, 'create'], 'manage');
+$r->post('/employes', [A\EmployeeController::class, 'store']);
 $r->get('/employes/{id}', [A\EmployeeController::class, 'show'], 'staff');
 $r->get('/employes/{id}/modifier', [A\EmployeeController::class, 'edit'], 'manage');
 $r->post('/employes/{id}', [A\EmployeeController::class, 'update']);

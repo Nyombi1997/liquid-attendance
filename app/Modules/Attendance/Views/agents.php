@@ -48,6 +48,7 @@ foreach ($tree['nodes'] as $n) {
       <button type="button" class="btn btn-primary" data-dialog="export-dialog"><?= fa('fa-solid fa-file-excel') ?> Exporter en Excel</button>
     <?php endif; ?>
     <?php if ($manage): ?>
+      <a class="btn btn-primary" href="/employes/nouveau"><?= fa('fa-solid fa-user-plus') ?> Nouvel agent</a>
       <a class="btn btn-outline" href="/departements"><?= fa('fa-solid fa-sitemap') ?> Départements</a>
     <?php endif; ?>
   </div>

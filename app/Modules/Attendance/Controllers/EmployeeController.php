@@ -13,7 +13,7 @@ use App\Modules\Attendance\Services\ScheduleResolver;
 use App\Modules\Platform\Services\Departments;
 
 /**
- * Liste et fiche des employés (droit « staff »), modification (« manage »).
+ * Liste et fiche des employés (droit « staff »), création et modification (« manage »).
  * Managers : uniquement les agents de leur département (Auth::departmentScope()).
  */
 final class EmployeeController extends Controller
@@ -163,34 +163,63 @@ final class EmployeeController extends Controller
         ]);
     }
 
+    /** Formulaire de création d'un employé (administrateur), avant ou sans synchronisation des pointeuses. */
+    public function create(): void
+    {
+        $this->render('Attendance:employee_form', [
+            'title'  => 'Nouvel employé',
+            'photo'  => null,
+            'emp'    => null,
+            'groups' => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
+            'departments' => Departments::tree(),
+        ]);
+    }
+
+    /**
+     * Création d'un employé. Le n° de pointeuse est celui sous lequel l'agent est (ou sera)
+     * enrôlé : à la synchronisation, le worker relie ses badges à cette fiche sans changer
+     * le nom saisi ici (seul le nom côté pointeuse, device_name, est mis à jour).
+     */
+    public function store(): void
+    {
+        $data = $this->formData();
+        $deviceId = trim((string) $this->input('device_user_id', ''));
+        $error = match (true) {
+            !preg_match('/^[A-Za-z0-9_-]{1,20}$/', $deviceId) => 'N° de pointeuse invalide (chiffres, lettres, - ou _, 20 caractères au plus).',
+            Database::value('SELECT 1 FROM employees WHERE device_user_id = ?', [$deviceId]) !== null
+                => "Le n° de pointeuse $deviceId est déjà attribué à un employé.",
+            default => $this->formError($data),
+        };
+        if ($error) {
+            $this->withInput();
+            flash('error', $error);
+            $this->redirect('/employes/nouveau');
+        }
+
+        $id = Database::insert(
+            'INSERT INTO employees (device_user_id, name, job_title, matricule, email, phone, group_id, department_id, active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$deviceId, $data['name'], $data['job_title'], $data['matricule'], $data['email'], $data['phone'],
+                $data['group_id'], $data['department_id'], $data['active']]
+        );
+        [$photoChange] = AgentPhoto::fromForm(Database::one('SELECT * FROM employees WHERE id = ?', [$id]));
+        Audit::log('employe_cree', array_filter(['id' => $id, 'nom' => $data['name'], 'pointeuse' => $deviceId,
+            'departement' => $data['department_id'], 'groupe' => $data['group_id'], 'photo' => $photoChange],
+            static fn($v) => $v !== null));
+
+        // Badges déjà présents sous ce numéro (agent enrôlé avant la création de la fiche)
+        if ($data['active']) {
+            (new AttendanceComputer())->run(date('Y-m-01'), date('Y-m-d'), [$id]);
+        }
+        flash('success', 'Employé ' . $data['name'] . ' créé.');
+        $this->redirect("/employes/$id");
+    }
+
     public function update(int $id): void
     {
         $emp = Database::one('SELECT * FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
-        $data = [
-            'name'      => mb_substr((string) $this->input('name', ''), 0, 120),
-            'job_title' => mb_substr((string) $this->input('job_title', ''), 0, 120) ?: null,
-            'department_id' => (int) $this->input('department_id', 0) ?: null,
-            'matricule' => mb_substr((string) $this->input('matricule', ''), 0, 40) ?: null,
-            'email'     => mb_substr((string) $this->input('email', ''), 0, 150) ?: null,
-            'phone'     => mb_substr((string) $this->input('phone', ''), 0, 40) ?: null,
-            'group_id'  => (int) $this->input('group_id', 0) ?: null,
-            'active'    => isset($_POST['active']) ? 1 : 0,
-        ];
-        if ($data['name'] === '') {
-            $this->withInput();
-            flash('error', 'Le nom est obligatoire.');
-            $this->redirect("/employes/$id/modifier");
-        }
-        if ($data['email'] && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-            $this->withInput();
-            flash('error', 'Adresse e-mail invalide.');
-            $this->redirect("/employes/$id/modifier");
-        }
-
-        if ($data['department_id'] !== null && !isset(Departments::all()[$data['department_id']])) {
-            $data['department_id'] = null;
-        }
-        if ($error = AgentPhoto::check()) {
+        $data = $this->formData();
+        if ($error = $this->formError($data)) {
             $this->withInput();
             flash('error', $error);
             $this->redirect("/employes/$id/modifier");
@@ -212,6 +241,37 @@ final class EmployeeController extends Controller
         }
         flash('success', 'Fiche employé enregistrée.');
         $this->redirect("/employes/$id");
+    }
+
+    /** Champs du formulaire employé (création et modification). */
+    private function formData(): array
+    {
+        $data = [
+            'name'      => trim(mb_substr((string) $this->input('name', ''), 0, 120)),
+            'job_title' => mb_substr((string) $this->input('job_title', ''), 0, 120) ?: null,
+            'department_id' => (int) $this->input('department_id', 0) ?: null,
+            'matricule' => mb_substr((string) $this->input('matricule', ''), 0, 40) ?: null,
+            'email'     => mb_substr((string) $this->input('email', ''), 0, 150) ?: null,
+            'phone'     => mb_substr((string) $this->input('phone', ''), 0, 40) ?: null,
+            'group_id'  => (int) $this->input('group_id', 0) ?: null,
+            'active'    => isset($_POST['active']) ? 1 : 0,
+        ];
+        if ($data['department_id'] !== null && !isset(Departments::all()[$data['department_id']])) {
+            $data['department_id'] = null;
+        }
+        if ($data['group_id'] !== null && Database::value('SELECT 1 FROM employee_groups WHERE id = ?', [$data['group_id']]) === null) {
+            $data['group_id'] = null;
+        }
+        return $data;
+    }
+
+    private function formError(array $data): ?string
+    {
+        return match (true) {
+            $data['name'] === '' => 'Le nom est obligatoire.',
+            $data['email'] !== null && !filter_var($data['email'], FILTER_VALIDATE_EMAIL) => 'Adresse e-mail invalide.',
+            default => AgentPhoto::check(),
+        };
     }
 
     /** Affecte plusieurs employés à un département en une fois (sans recalcul : pas d'effet sur les horaires). */

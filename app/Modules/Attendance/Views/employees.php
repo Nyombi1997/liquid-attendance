@@ -3,7 +3,12 @@
     <h1>Employés</h1>
     <p class="muted"><?= count($employees) ?> employé(s). La liste est importée des pointeuses ; le nom affiché ici se modifie dans la plateforme sans toucher aux appareils.</p>
   </div>
-  <?php if (can('manage')): ?><a class="btn btn-outline" href="/groupes"><?= icon('layers') ?> Gérer les groupes</a><?php endif; ?>
+  <?php if (can('manage')): ?>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="/employes/nouveau"><?= fa('fa-solid fa-user-plus') ?> Nouvel employé</a>
+    <a class="btn btn-outline" href="/groupes"><?= icon('layers') ?> Gérer les groupes</a>
+  </div>
+  <?php endif; ?>
 </div>
 
 <form class="filters card" method="get" action="/employes" data-auto-filter>
