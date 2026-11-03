@@ -81,8 +81,8 @@ $nav = array_filter($nav);
   <meta name="user-id" content="<?= (int) ($user['id'] ?? 0) ?>">
   <title><?= e($title ?? '') ?> · <?= e(Config::get('app_name')) ?></title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="<?= e(asset('img/icon-192.png')) ?>">
-  <link rel="apple-touch-icon" href="<?= e(asset('img/icon-192.png')) ?>">
+  <link rel="icon" type="image/png" href="<?= e(asset('img/Q-color-liquid.png')) ?>">
+  <link rel="apple-touch-icon" href="<?= e(asset('img/apple-touch-icon.png')) ?>">
   <link rel="stylesheet" href="<?= e(asset('vendor/fontawesome/css/all.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
   <script src="<?= e(asset('js/app.js')) ?>" defer></script>
@@ -91,7 +91,7 @@ $nav = array_filter($nav);
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="<?= e(Auth::home()) ?>">
-      <img src="<?= e(asset('img/logo.svg')) ?>" alt="" width="34" height="34">
+      <img src="<?= e(asset('img/LOGO-LIT-blanc.png')) ?>" alt="Liquid Intelligent Technologies" width="150" height="44">
       <span><?= e(Config::get('app_name')) ?></span>
     </a>
     <nav>

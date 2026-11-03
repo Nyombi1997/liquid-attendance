@@ -7,7 +7,8 @@
   <meta name="color-scheme" content="light dark">
   <title><?= e($title ?? 'Connexion') ?> · <?= e(Config::get('app_name')) ?></title>
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="<?= e(asset('img/icon-192.png')) ?>">
+  <link rel="icon" type="image/png" href="<?= e(asset('img/Q-color-liquid.png')) ?>">
+  <link rel="apple-touch-icon" href="<?= e(asset('img/apple-touch-icon.png')) ?>">
   <link rel="stylesheet" href="<?= e(asset('vendor/fontawesome/css/all.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
   <script src="<?= e(asset('js/app.js')) ?>" defer></script>

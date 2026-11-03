@@ -9,9 +9,9 @@
 // (helper PHP asset()). Une URL versionnée ne change jamais de contenu : elle
 // est servie depuis le cache, et seule la dernière version de chaque fichier
 // est gardée. Inutile de modifier CACHE à chaque mise à jour.
-const CACHE = 'liquid-v5'; // v5 : écrans de mission consultables hors réseau
+const CACHE = 'liquid-v6'; // v6 : logo et icônes Liquid Intelligent Technologies
 const PAGES = 'liquid-pages';
-const PRECACHE = ['/offline.html', '/assets/js/offline.js', '/assets/icons.svg', '/assets/img/logo.svg', '/assets/img/icon-192.png'];
+const PRECACHE = ['/offline.html', '/assets/js/offline.js', '/assets/icons.svg', '/assets/img/LOGO-LIT-color.png', '/assets/img/Q-color-liquid.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
