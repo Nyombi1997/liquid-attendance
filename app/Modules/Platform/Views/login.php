@@ -1,12 +1,8 @@
-<?php use App\Core\Config; ?>
 <main class="auth">
   <section class="auth-panel">
     <div class="auth-brand">
       <img src="<?= e(asset('img/LOGO-LIT-color.png')) ?>" alt="Liquid Intelligent Technologies" width="150" height="44">
-      <div>
-        <strong><?= e(Config::get('app_name')) ?></strong>
-        <small>Plateforme interne</small>
-      </div>
+      <small>Plateforme interne</small>
     </div>
     <h1>Connexion</h1>
     <p class="muted">Présence, parc automobile et congés, avec un seul compte.</p>

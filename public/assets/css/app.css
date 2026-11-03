@@ -64,7 +64,7 @@ small, .small { font-size: 12px; }
 /* ---------- Structure ---------- */
 .shell { display: flex; min-height: 100vh; }
 .sidebar { width: 248px; flex: none; background: var(--primary); color: #fff; display: flex; flex-direction: column; padding: 22px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.brand { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: #fff; font-weight: 600; font-size: 13px; letter-spacing: .02em; padding: 0 8px 18px; }
+.brand { display: flex; padding: 0 8px 18px; }
 .brand img { width: 150px; height: auto; }
 .brand:hover { text-decoration: none; }
 .sidebar nav { flex: 1; }
@@ -297,8 +297,6 @@ a.list-item:hover { text-decoration: none; background: var(--primary-50); }
 .auth-panel { background: var(--surface); padding: 48px 44px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
 .auth-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 26px; }
 .auth-brand img { width: 170px; height: auto; }
-.auth-brand div { display: flex; flex-direction: column; line-height: 1.2; }
-.auth-brand strong { font-size: 17px; color: var(--primary); }
 .auth-brand small { color: var(--muted); }
 .auth-panel h1 { font-size: 26px; }
 .auth-panel form { margin-top: 10px; }

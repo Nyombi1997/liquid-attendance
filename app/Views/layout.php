@@ -92,7 +92,6 @@ $nav = array_filter($nav);
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="<?= e(Auth::home()) ?>">
       <img src="<?= e(asset('img/LOGO-LIT-blanc.png')) ?>" alt="Liquid Intelligent Technologies" width="150" height="44">
-      <span><?= e(Config::get('app_name')) ?></span>
     </a>
     <nav>
       <?php foreach ($nav as $section => $items): ?>
