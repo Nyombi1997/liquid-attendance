@@ -16,6 +16,14 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 
 ---
 
+## Organisation en applications (à la manière d'Odoo)
+
+- **Accueil des applications** (`/applications`) : grille d'icônes (Présence, Employés, Parc automobile, Congés, Paramètres), salutation, date et recherche d'employé. C'est la page ouverte après la connexion dès que le compte a accès à plusieurs applications ; un compte limité à une seule application (Employé du parc automobile) arrive directement dans celle-ci.
+- **Barre du haut** : bouton « grille » (retour aux applications), nom de l'application en cours, puis **ses menus** ; les entrées secondaires sont regroupées en menus déroulants (Présence : Suivi, Configuration ; Parc automobile : Demandes, Configuration). À droite : indicateur « En direct », cloche, menu du compte (Applications, Mon profil, Déconnexion).
+- Une application ou une entrée n'apparaît que si le rôle a le droit de sa route ; sur téléphone, les menus s'ouvrent dans un panneau sous la barre (bouton ☰).
+- Répartition : **Présence** (tableau de bord, agents, présence du jour, calendrier, pointages ; Suivi : sorties manquantes, accès aux salles ; Configuration : horaires, groupes, pointeuses), **Employés** (employés, départements), **Parc automobile**, **Congés** (à venir), **Paramètres** (utilisateurs, journal d'activité, état du service ; administrateur).
+- Définition des applications et de leurs menus : `app/Modules/Platform/Services/Apps.php`.
+
 ## Ce que fait le module Présence
 
 - **Tout est en direct** : un badge apparaît dans la plateforme en quelques secondes, sans recharger la page (voir « Fonctionnement en direct » ci-dessous).
@@ -32,7 +40,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 - **Rapport détaillé** : bouton de la carte « Répartition du jour » du tableau de bord, vers la Présence du jour (Calendrier pour les RH).
 - **Accès aux salles** (NOC, IT Room) : historique des entrées, séparé du calcul de présence.
 - **Contrôle des horloges** : décalage de chaque pointeuse affiché, alerte au-delà d'une minute, remise à l'heure chaque nuit.
-- **État du service** (Administration › État du service, `/etat-du-service`, administrateur) : dernier passage du worker (battement de cœur en base toutes les 60 s ; alerte s'il ne répond plus), pointeuses en écoute, dernier badge et écart d'horloge de chaque pointeuse, taille de la base et des plus grosses tables, dernière sauvegarde (date, taille, erreur éventuelle).
+- **État du service** (Paramètres › État du service, `/etat-du-service`, administrateur) : dernier passage du worker (battement de cœur en base toutes les 60 s ; alerte s'il ne répond plus), pointeuses en écoute, dernier badge et écart d'horloge de chaque pointeuse, taille de la base et des plus grosses tables, dernière sauvegarde (date, taille, erreur éventuelle).
 - **Sauvegarde nocturne** de la base par le worker, chaque nuit à 02:00 (`BACKUP_AT`) : `mariadb-dump` compressé dans `./data/backups` (`liquid_AAAA-MM-JJ.sql.gz`), 14 jours gardés (`BACKUP_KEEP_DAYS`).
 - **Page Pointeuses** : état de la connexion, dernière synchronisation complète, « dernier badge reçu il y a … » et indicateur « en écoute » quand la connexion directe est active.
 - **Page Agents** (`/agents`) : une carte par agent avec photo, titre, e-mail et téléphone (copiables d'un clic), département, groupe, **heure d'arrivée du jour** (vert : à l'heure, orange : en retard, rouge : pas arrivé) et **statut de travail** en haut à droite (au bureau, télétravail, mission, congé). Filtres par département (arbre à gauche), par état (à l'heure, en retard, pas arrivés…) et recherche instantanée. Mise à jour en direct.
@@ -61,7 +69,7 @@ Le contexte complet du projet (réseau, décisions, questions ouvertes) est dans
 | Lecteur | Consultation et export, sans modification | Tableau de bord |
 | Employé | **Parc automobile seulement** : ses demandes de véhicule et, pour un chauffeur, ses missions. Compte relié à une fiche employé | Parc automobile (Mes missions pour un chauffeur) |
 
-Le département d'un manager se choisit dans **Administration > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, fiches, photos, calendrier, `/api/direct` et `/api/notifications`).
+Le département d'un manager se choisit dans **Paramètres > Utilisateurs** (obligatoire pour ce rôle). Le filtrage est fait côté serveur sur chaque requête (pages, fiches, photos, calendrier, `/api/direct` et `/api/notifications`).
 
 Pour les RH et les managers, la notion de « sortie manquante » n'apparaît nulle part : une journée sans sortie badgée s'affiche « Présent » (ou « Retard ») et la carte « Sorties manquantes » du tableau de bord est masquée.
 
@@ -109,8 +117,8 @@ L'application reste toujours en **thème clair**, même quand le téléphone est
 
 Cahier des charges : [`docs/Cahier_des_charges_Fleet.pdf`](docs/Cahier_des_charges_Fleet.pdf) (sections 2, 3 et 7). Aucun véhicule ne sort sans demande validée et affectée.
 
-- **Organisation** (Administration › Départements) : chaque département est une **direction** ou un **service**, avec un **responsable (N+1)** choisi parmi les employés. Les employés sont rattachés à leur service (fiche, carte ou action groupée de la liste des employés).
-- **Comptes** (Administration › Utilisateurs) : un compte peut être **relié à une fiche employé** (obligatoire pour demander un véhicule) et reçoit un **rôle Parc automobile**. Le rôle de base **« Employé »** donne accès au seul Parc automobile (demandeurs et chauffeurs sans accès à la présence).
+- **Organisation** (Employés › Départements) : chaque département est une **direction** ou un **service**, avec un **responsable (N+1)** choisi parmi les employés. Les employés sont rattachés à leur service (fiche, carte ou action groupée de la liste des employés).
+- **Comptes** (Paramètres › Utilisateurs) : un compte peut être **relié à une fiche employé** (obligatoire pour demander un véhicule) et reçoit un **rôle Parc automobile**. Le rôle de base **« Employé »** donne accès au seul Parc automobile (demandeurs et chauffeurs sans accès à la présence).
 - **Demande** (`/flotte/demandes/nouvelle`, web et téléphone) : motif, destination, mission hors ville, départ et retour, passagers, chauffeur souhaité ou « je conduis », type de véhicule, **ordre de mission** (PDF ou image, 5 Mo au plus, stocké hors du dossier public ; obligatoire selon le paramètre), urgence motivée. Le demandeur suit le statut, voit les étapes et l'historique, **annule** tant que la mission n'a pas commencé et **évalue la course** (ponctualité, conduite, commentaire).
 - **Circuit de validation** : le **N+1** (responsable du service ; si le demandeur est lui-même responsable ou si personne n'est désigné, on remonte l'arborescence) valide d'abord ; la **direction** valide ensuite si la mission est **hors ville**, dure **plus de 2 jours** ou touche un **week-end** (seuils dans Parc automobile › Paramètres). Sans N+1, la demande va directement à la direction. **Refus avec motif obligatoire**, renvoyé au demandeur. Personne ne valide sa propre demande. Page **À valider** pour les validateurs.
 - **Demande urgente** : le gestionnaire peut **affecter avant la fin de la validation** ; la validation se fait **a posteriori** et reste tracée (filtre « Urgences à régulariser »). Un refus a posteriori libère le véhicule si la mission n'a pas commencé.
@@ -402,7 +410,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 | Besoin | Commande |
 |---|---|
 | Accéder à phpMyAdmin | depuis ton poste : `ssh -L 8090:127.0.0.1:8090 ubuntu01@10.169.153.144`, puis http://localhost:8090 |
-| Voir la synchronisation | `sudo docker compose logs -f worker`, ou Administration › État du service |
+| Voir la synchronisation | `sudo docker compose logs -f worker`, ou Paramètres › État du service |
 | Sauvegarder la base tout de suite | `sudo docker compose exec worker python3 worker/sync.py --sauvegarde` (fichier dans `./data/backups`) |
 | Tâches du parc automobile (rappels, alertes, e-mails) à la main | `sudo docker compose exec worker php bin/fleet-tasks.php` (lancé seul toutes les 60 s par le worker) |
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
@@ -436,7 +444,7 @@ Les photos des agents sont enregistrées dans `./data/storage/photos` et les fic
 
 ### Sauvegarde de la base
 
-Automatique : chaque nuit à 02:00 (`BACKUP_AT`, `off` pour désactiver), le worker écrit `./data/backups/liquid_AAAA-MM-JJ.sql.gz` (`mariadb-dump --single-transaction`, compressé) et supprime les fichiers de plus de 14 jours (`BACKUP_KEEP_DAYS`). Résultat et erreurs : Administration › État du service, et `sudo docker compose logs worker | grep sauvegarde`. Copier régulièrement `./data/backups` hors de la VM.
+Automatique : chaque nuit à 02:00 (`BACKUP_AT`, `off` pour désactiver), le worker écrit `./data/backups/liquid_AAAA-MM-JJ.sql.gz` (`mariadb-dump --single-transaction`, compressé) et supprime les fichiers de plus de 14 jours (`BACKUP_KEEP_DAYS`). Résultat et erreurs : Paramètres › État du service, et `sudo docker compose logs worker | grep sauvegarde`. Copier régulièrement `./data/backups` hors de la VM.
 
 Restaurer une sauvegarde (remplace le contenu de la base) :
 
@@ -457,7 +465,8 @@ Les données sont dans `./data` : ne jamais lancer `docker system prune --volume
 app/
   Core/                    noyau MVC : routeur, base, vues, authentification, CSRF, journal
   Modules/
-    Platform/              socle commun : connexion, profil, utilisateurs, départements (Services/Departments), état du service,
+    Platform/              socle commun : connexion, accueil des applications (Services/Apps : applications et menus), profil, utilisateurs,
+                           départements (Services/Departments), état du service,
                            notifications des comptes (Services/Notifications), modules à venir
     Attendance/            module Présence
       Controllers/         une classe par écran ; AgentController (cartes, photos, statuts), CalendarController, LiveController (/api/direct, /api/notifications)

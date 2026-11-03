@@ -3,10 +3,39 @@
   'use strict';
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  // Menu latéral sur mobile
-  $$('[data-toggle-sidebar]').forEach((el) =>
-    el.addEventListener('click', () => document.body.classList.toggle('sidebar-open'))
-  );
+  // Menus de l'application sur mobile (panneau sous la barre)
+  const menuBtn = document.querySelector('.menu-toggle[data-toggle-menu]');
+  const toggleMenu = (show) => {
+    const open = document.body.classList.toggle('menu-open', show);
+    menuBtn?.setAttribute('aria-expanded', String(open));
+  };
+  $$('[data-toggle-menu]').forEach((el) => el.addEventListener('click', () => toggleMenu()));
+
+  // Menus déroulants de la barre (groupes de l'application, compte) : un seul ouvert à la fois
+  const dropdowns = $$('[data-dropdown]');
+  const closeDropdowns = (except) => dropdowns.forEach((d) => {
+    if (d === except) return;
+    d.querySelector('[data-dropdown-panel]').hidden = true;
+    d.querySelector('[data-dropdown-toggle]').setAttribute('aria-expanded', 'false');
+  });
+  dropdowns.forEach((d) => {
+    const btn = d.querySelector('[data-dropdown-toggle]');
+    const panel = d.querySelector('[data-dropdown-panel]');
+    btn.addEventListener('click', () => {
+      closeDropdowns(d);
+      panel.hidden = !panel.hidden;
+      btn.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-dropdown]')) closeDropdowns();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = dropdowns.find((d) => !d.querySelector('[data-dropdown-panel]').hidden);
+    if (open) { closeDropdowns(); open.querySelector('[data-dropdown-toggle]').focus(); }
+    if (document.body.classList.contains('menu-open')) toggleMenu(false);
+  });
 
   // Boîtes de dialogue
   $$('[data-dialog]').forEach((btn) =>

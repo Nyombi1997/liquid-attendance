@@ -7,7 +7,7 @@ use App\Core\Controller;
 use App\Core\Database;
 
 /**
- * Administration > État du service : battement de cœur du worker, pointeuses,
+ * Paramètres > État du service : battement de cœur du worker, pointeuses,
  * taille de la base, dernière sauvegarde. Les valeurs du worker sont écrites
  * par worker/sync.py dans la table settings (worker_*, compute_last_at, backup_*).
  */

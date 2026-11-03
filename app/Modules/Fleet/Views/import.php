@@ -41,7 +41,7 @@ $icons = ['organisation' => 'fa-solid fa-sitemap', 'vehicules' => 'fa-solid fa-c
     <li><strong>Fiches existantes</strong> (même immatriculation, même employé, même nom de direction ou de service) : mises à jour ; une cellule vide ne change rien.</li>
     <li><strong>Organisation</strong> : une direction absente est créée ; le service est créé ou rattaché à la direction de la ligne ; le N+1 s'applique au service, ou à la direction si la colonne Service est vide.</li>
     <li><strong>Véhicules</strong> : marque et modèle obligatoires pour un nouveau véhicule ; statut : disponible, en panne ou en entretien ; une échéance d'assurance ou de contrôle technique différente de la dernière connue ajoute un document (sans fichier, à joindre ensuite sur la fiche).</li>
-    <li><strong>Chauffeurs</strong> : catégories de permis A à G (ex. « B,C »). Pour voir ses missions, le chauffeur a aussi besoin d'un compte relié à sa fiche (Administration › Utilisateurs).</li>
+    <li><strong>Chauffeurs</strong> : catégories de permis A à G (ex. « B,C »). Pour voir ses missions, le chauffeur a aussi besoin d'un compte relié à sa fiche (Paramètres › Utilisateurs).</li>
     <li>Fichier de <?= FleetImport::MAX_BYTES / 1_048_576 ?> Mo et <?= FleetImport::MAX_ROWS ?> lignes au plus ; chaque import est noté dans le journal d'activité.</li>
   </ul>
 </section>

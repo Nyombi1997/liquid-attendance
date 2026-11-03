@@ -40,9 +40,9 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 - **Toute requête qui lit des agents, des journées ou des pointages et qui est accessible à un manager doit appliquer le périmètre** :
   `Departments::sql(Auth::departmentScope())` (renvoie `''`, `' AND 0'` ou `' AND e.department_id IN (…)'`). Ne jamais l'oublier dans une nouvelle page `board` ni dans `/api/direct`.
 - Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('presence')`, `can('staff')`, `can('calendar')`, `can('view')`, `can('status')`, `can('manage')`, `can('admin')`. Un manager ou un RH ne doit voir aucun lien vers une page qui lui renverrait 403.
-- Le menu de `layout.php` liste chaque entrée avec son droit (5e élément) : ajouter une page = ajouter l'entrée avec le même droit que sa route.
+- Menus : applications à la manière d'Odoo, déclarées dans `app/Modules/Platform/Services/Apps.php` (nom, icône Font Awesome, couleur, préfixes d'adresse, menu). Chaque entrée : `[libellé, adresse, droit, préfixes actifs]`, groupe : `['Libellé', [entrées…]]` (menu déroulant). Ajouter une page = ajouter l'entrée avec le même droit que sa route, et son préfixe dans `paths` de l'application si besoin. `layout.php` ne fait qu'afficher.
 - Identifiants : toujours passer par `Auth::normalizeUsername()` (minuscules) avant d'enregistrer ou de comparer.
-- Accueil après connexion : `Auth::home()` (`/agents` pour `ceo` et `manager`, `/` sinon). Le menu de `app/Views/layout.php` dépend du rôle.
+- Accueil après connexion : `Apps::landing()` (grille `/applications` si le compte a plusieurs applications, sinon `Auth::home()`). `Auth::home()` reste la page par défaut (`/agents` pour `ceo` et `manager`, `/` sinon) et la première entrée de l'application Présence.
 
 ### Parc automobile (`app/Modules/Fleet`)
 - **Règles dans les services purs** `FleetWorkflow` (circuit) et `Availability` (conflits) : les contrôleurs lisent la demande, appellent la règle, enregistrent les champs renvoyés. Toute nouvelle règle y va, avec son test dans `tests/FleetWorkflowTest.php`. Pas de règle métier en JavaScript.
@@ -69,7 +69,7 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 ### Icônes
 - **Font Awesome Free 6.7.2** est servi localement (`public/assets/vendor/fontawesome`, CSS chargé dans `layout.php`). Helper PHP : `fa('fa-solid fa-plane')` → `<i class="…" aria-hidden="true">`. En JS, créer un `<i>` avec les mêmes classes.
 - N'utiliser que les styles gratuits : `fa-solid`, `fa-regular` (jeu réduit), `fa-brands`. Vérifier qu'une icône existe en version Free avant de l'employer.
-- Le sprite `icons.svg` (`icon('nom')`, traits fins) reste utilisé pour le menu et les boutons existants ; ne pas mélanger les deux dans un même groupe de boutons.
+- Le sprite `icons.svg` (`icon('nom')`, traits fins) reste utilisé pour les boutons existants ; ne pas mélanger les deux dans un même groupe de boutons.
 - Un bouton qui ne contient qu'une icône a un `aria-label` (et un `title` si utile).
 
 ### Base de données

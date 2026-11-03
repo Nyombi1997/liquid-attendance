@@ -1,6 +1,6 @@
 # Cadrage — Plateforme interne (Attendance, Fleet, Leave)
 
-Mis à jour le 22 octobre 2026 · @Beni
+Mis à jour le 3 novembre 2026 · @Beni
 
 ## Comment utiliser ce document
 
@@ -20,13 +20,14 @@ Colle ce document au début d'un nouveau chat, ou ajoute-le aux connaissances d'
 | Calendrier de présence (jour / semaine / mois, temps en direct, raisons d'absence, absents en rouge), cloche des notifications (« 9+ »), Employés pour les managers, photo cliquable et modifiable depuis la fiche, menus RH et managers réduits | **Fait** le 12 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px) ; migration `004_calendrier.sql` à appliquer sur la VM |
 | Tableau de bord en camemberts (présents / absents, à l'heure / en retard, en %), filtres appliqués sans bouton, filtre « Présents (même sortis) », heures « 00h…23h » du calendrier, reprise du direct au déverrouillage du téléphone, thème clair forcé | **Fait** le 12 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px) ; aucune migration |
 | Page Pointages (`/pointages`, tous les rôles, périmètre du manager), derniers pointages cliquables vers la fiche de l'agent, bouton « Voir le rapport détaillé », correctif du mode sombre forcé des navigateurs mobiles (racine `light dark`, contenu clair) | **Fait** le 12 oct. 2026, testé en local (MariaDB, rôles admin / rh / ceo / manager) ; aucune migration ; mode sombre à confirmer sur le téléphone |
-| Exploitation : remise à l'heure au démarrage (écart > 30 s), F16 en délai long et journal détaillé, tentatives toutes les 30 min après 5 échecs, battement de cœur du worker, sauvegarde nocturne de la base (02:00, `./data/backups`, 14 jours), page Administration › État du service | **Fait** le 22 oct. 2026, testé en local (faux `zk`, vrai `mariadb-dump` contre MariaDB 11.4, Chrome 1280 et 390 px) ; aucune migration |
+| Exploitation : remise à l'heure au démarrage (écart > 30 s), F16 en délai long et journal détaillé, tentatives toutes les 30 min après 5 échecs, battement de cœur du worker, sauvegarde nocturne de la base (02:00, `./data/backups`, 14 jours), page Paramètres › État du service | **Fait** le 22 oct. 2026, testé en local (faux `zk`, vrai `mariadb-dump` contre MariaDB 11.4, Chrome 1280 et 390 px) ; aucune migration |
 | Déploiement sur la VM | À faire (voir README, étapes 1 à 3) |
 | Réservation DHCP de la VM | À obtenir avant la publication |
 | Publication Internet par la DMZ (VLAN 3604) + certificat Let's Encrypt | **En attente** : sous-réseau de la DMZ à fournir par l'équipe sécurité (README, étapes 4 et 5) |
 | Sécuriser Kibana (liste d'IP ou login) | À faire |
 | Parc automobile, module 1 « Demande et octroi de véhicule » : directions/services et N+1, rôle `employe` et rôles Parc automobile, véhicules (documents avec alerte 30 j), chauffeurs, demandes avec ordre de mission, circuit N+1 → direction, refus motivé, urgence validée a posteriori, affectation avec frise et verrou anti-double réservation, planning, écran mission sur téléphone avec saisie hors réseau, cloche + e-mails + rappel 1 h avant, évaluation, historique, tableau de bord | **Fait** le 20 oct. 2026, testé en local (MariaDB, Chrome 1280 et 390 px, hors réseau simulé, faux SMTP) ; migration `005_flotte.sql` à appliquer sur la VM ; SMTP à configurer dans `.env` |
 | Parc automobile, import CSV de l'organisation, des véhicules et des chauffeurs (modèles, aperçu avant validation, erreurs ligne par ligne, transaction, journal) | **Fait** le 22 oct. 2026, testé en local (MariaDB, fichiers UTF-8 et Windows-1252, séparateurs « ; » et « , », rôles admin / gestionnaire / CEO / demandeur, Chrome 1280 et 390 px) ; aucune migration |
+| Organisation en applications à la manière d'Odoo : accueil `/applications` (grille des applications), barre du haut avec les menus de l'application en cours (menus déroulants Suivi, Configuration, Demandes), menu du compte ; menu latéral supprimé | **Fait** le 3 nov. 2026, testé en local (MariaDB, rôles admin / rh / ceo / manager / demandeur / validateur / chauffeur, Chrome 1280 et 390 px) ; aucune migration |
 | Parc automobile, modules 2 à 4 (GPS, alertes de mouvement, carburant) | À faire : trackers à choisir ; colonnes déjà prévues (`fleet_vehicles.tracker_id`, `ref_consumption`, `tank_liters`) |
 | Module Congés | Priorité 3 |
 
@@ -140,7 +141,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 | Back-end | PHP 8.3, MVC maison, un module par dossier (`app/Modules/…`) |
 | Front-end | HTML, CSS, JavaScript sans dépendance externe ; PWA installable |
 | Base | **MariaDB 11.4** + **phpMyAdmin** |
-| Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min, puis toutes les 30 min après 5 échecs de suite ; F16 : délai de 60 s et journal détaillé). Calcul en PHP (mêmes règles que l'application) : journée de l'agent recalculée après chaque badge de présence (un appel au plus toutes les 5 s pour tous les agents en attente), et calcul global toutes les 5 min dans un thread à part. Horloges remises à l'heure de la VM au démarrage (si l'écart dépasse 30 s) et chaque nuit à 03:00. Battement de cœur en base, sauvegarde nocturne de MariaDB (02:00, 14 jours), page Administration › État du service |
+| Synchronisation | Service `worker` : Python/pyzk (bibliothèque testée sur nos appareils). Une connexion permanente par pointeuse : badges en temps réel (`live_capture`), synchro complète toutes les 30 min sur la même connexion, reconnexion progressive (10 s → 5 min, puis toutes les 30 min après 5 échecs de suite ; F16 : délai de 60 s et journal détaillé). Calcul en PHP (mêmes règles que l'application) : journée de l'agent recalculée après chaque badge de présence (un appel au plus toutes les 5 s pour tous les agents en attente), et calcul global toutes les 5 min dans un thread à part. Horloges remises à l'heure de la VM au démarrage (si l'écart dépasse 30 s) et chaque nuit à 03:00. Battement de cœur en base, sauvegarde nocturne de MariaDB (02:00, 14 jours), page Paramètres › État du service |
 | Parc automobile | Module `app/Modules/Fleet`, même socle (connexion, gabarit, CSP, audit). Pas d'application native : la PWA sert aux demandeurs et aux chauffeurs (écrans pour téléphone, saisie hors réseau de la mission dans IndexedDB, envoi au retour du réseau). Tâches planifiées (rappels, alertes d'expiration, e-mails) dans le worker : `bin/fleet-tasks.php` toutes les 60 s. E-mails par SMTP (`.env`), sans envoi si non configuré |
 | Mode direct | API JSON `GET /api/direct` interrogée toutes les 5 s par les pages ouvertes (60 s onglet caché) : nouveaux pointages, journées modifiées, indicateurs, état des pointeuses. Mise à jour de la page sans rechargement. Notifications : cloche en haut à droite (badges du jour non lus, « 9+ »), `GET /api/notifications` toutes les 15 s sur toutes les pages |
 | Cache navigateur | Fichiers statiques versionnés par date de modification (`asset()`, `?v=`), cache d'un an ; service worker sans numéro de version à modifier |
@@ -176,7 +177,7 @@ Une plateforme web interne unique, avec une connexion commune, qui regroupe troi
 ## Design
 
 - Couleurs : **#273c88** (principale) et **#c8187d** (accent).
-- Style des maquettes de référence : menu latéral coloré, cartes blanches, tableaux aérés, indicateurs en haut du tableau de bord.
+- Organisation à la manière d'Odoo (décidé le 3 nov. 2026) : grille des applications à l'accueil, barre du haut colorée avec les menus de l'application ; style des maquettes de référence : cartes blanches, tableaux aérés, indicateurs en haut du tableau de bord.
 - Boutons et champs : coins arrondis à 5 px maximum. Interface en français.
 - Thème clair uniquement, même si le téléphone est en mode sombre.
 

@@ -16,10 +16,11 @@ session_start();
 
 $r = new Router();
 
-// Socle : connexion, profil, utilisateurs, modules à venir
+// Socle : connexion, accueil des applications, profil, utilisateurs, modules à venir
 $r->get('/connexion', [P\AuthController::class, 'showLogin'], null);
 $r->post('/connexion', [P\AuthController::class, 'login'], null);
 $r->post('/deconnexion', [P\AuthController::class, 'logout'], 'account');
+$r->get('/applications', [P\ModuleController::class, 'apps'], 'account');
 $r->get('/profil', [P\ProfileController::class, 'show'], 'account');
 $r->post('/profil/mot-de-passe', [P\ProfileController::class, 'updatePassword'], 'account');
 $r->get('/utilisateurs', [P\UserController::class, 'index'], 'admin');

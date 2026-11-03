@@ -5,13 +5,14 @@ namespace App\Modules\Platform\Controllers;
 
 use App\Core\Auth;
 use App\Core\Controller;
+use App\Modules\Platform\Services\Apps;
 
 final class AuthController extends Controller
 {
     public function showLogin(): void
     {
         if (Auth::user()) {
-            $this->redirect(Auth::home());
+            $this->redirect(Apps::landing());
         }
         $this->render('Platform:login', ['title' => 'Connexion'], 'auth');
     }
@@ -34,7 +35,7 @@ final class AuthController extends Controller
         $to = $_SESSION['_intended'] ?? '/';
         unset($_SESSION['_intended'], $_SESSION['_old']);
         $valid = str_starts_with($to, '/') && !str_starts_with($to, '//');
-        $this->redirect($valid && $to !== '/' ? $to : Auth::home());
+        $this->redirect($valid && $to !== '/' ? $to : Apps::landing());
     }
 
     public function logout(): void

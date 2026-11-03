@@ -74,12 +74,13 @@ Ne jamais utiliser 7080 (avis customers). Tout nouveau port doit être vérifié
 ```
 app/bootstrap.php            autoload App\ → app/, config, helpers
 app/Core/                    Router, Database (PDO, requêtes préparées), View, Auth (rôles, périmètre), Csrf, Audit, Config, Controller, Xlsx (classeurs Excel), Mailer (SMTP sans dépendance), helpers.php
-app/Modules/Platform/        connexion, profil, utilisateurs, départements, état du service, page « à venir » (Leave)
+app/Modules/Platform/        connexion, accueil des applications (/applications), profil, utilisateurs, départements, état du service, page « à venir » (Leave)
+  Services/Apps.php          applications (à la manière d'Odoo) et leurs menus, avec le droit de chaque entrée
   Services/Departments.php   arbre des départements (direction/service, N+1), périmètre SQL des managers
   Services/Notifications.php notifications des comptes (cloche, file des e-mails), communes aux modules
 app/Modules/Attendance/      module Présence : Controllers/, Services/, Views/
 app/Modules/Fleet/           module Parc automobile (module 1) : Controllers/, Services/, Views/
-app/Views/                   gabarit layout.php (menu selon le rôle), auth.php, errors/
+app/Views/                   gabarit layout.php (barre du haut : grille des applications, menus de l'application en cours, compte), auth.php, errors/
 public/index.php             contrôleur frontal : TOUTES les routes
 public/assets/               app.css, app.js (sans dépendance), icons.svg, vendor/fontawesome (Free 6.7.2, local)
 public/manifest.webmanifest, sw.js, offline.html   PWA (cache des fichiers versionnés ?v=, jamais /api/)
@@ -105,7 +106,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 | `export` | admin, rh | `/agents/export` (rapport Excel de la page Agents) |
 | `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
 | `admin` | admin | `/utilisateurs`, `/journal`, `/etat-du-service`, POST `/pointeuses`, `/flotte/parametres` |
-| `account` | tous, `employe` compris | `/profil`, `/deconnexion`, `/api/notifications` (+ POST `/api/notifications/lu`) |
+| `account` | tous, `employe` compris | `/applications`, `/profil`, `/deconnexion`, `/api/notifications` (+ POST `/api/notifications/lu`) |
 
 **Parc automobile** : droits donnés par le rôle de la plateforme **ou** par `users.fleet_role` (noté `fleet:…` dans `Auth::ABILITIES`) :
 
@@ -124,6 +125,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 - Périmètre : `Departments::sql(Auth::departmentScope())` dans toute requête accessible à un manager (pages, fiches employés, photos, calendrier, `/api/direct`, `/api/notifications`).
 - Filtres : formulaires `data-auto-filter` (app.js) appliqués à chaque changement, sans bouton « Filtrer ».
 - Cloche des notifications (`layout.php`, `setupNotifications()` dans `app.js`) : badges du jour via `/api/notifications` toutes les 15 s, compteur « 9+ », dernier badge lu en `localStorage`. Plus de notifications en bas à droite.
+- Applications (à la manière d'Odoo, `Platform/Services/Apps.php`) : Présence, Employés, Parc automobile, Congés, Paramètres ; chaque entrée de menu porte le droit de sa route, une application sans entrée visible est masquée, un groupe (menu déroulant) réduit à une entrée devient un lien simple. Après la connexion : `Apps::landing()` → `/applications` (grille) si plusieurs applications, sinon `Auth::home()`.
 - Accueil : `Auth::home()` → `/agents` (ceo, manager), `/flotte` ou `/flotte/missions` (employe), ou `/`. Un compte sans accès à `/` y est redirigé vers son accueil (PWA).
 - Cloche : messages du compte (table `notifications`, lus côté serveur) puis badges du jour (seulement avec le droit `board`).
 
@@ -164,19 +166,19 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 **Ajouter un module (Leave)** (modèle : `app/Modules/Fleet`) :
 1. Dossier `app/Modules/<Module>/{Controllers,Services,Views}` (namespace `App\Modules\<Module>\…`, vues `'<Module>:nom'`).
 2. Routes dans `public/index.php` avec leur droit ; remplacer la page `/conges` de `ModuleController`.
-3. Réutiliser `employees` (et `departments`) par clé étrangère, les comptes et rôles existants, le gabarit `layout.php` (ajouter les entrées du menu).
+3. Réutiliser `employees` (et `departments`) par clé étrangère, les comptes et rôles existants, le gabarit `layout.php` ; déclarer l'application et ses menus dans `Platform/Services/Apps.php` (remplacer l'application « Congés » existante).
 4. Tables : migration `database/migrations/NNN_*.sql` + `schema.sql`.
 
 # 5. Conventions
 
 - Interface, messages, commentaires et commits en français.
-- Couleurs #273c88 (principale) et #c8187d (accent) ; coins arrondis de 5 px maximum pour boutons et champs ; style des maquettes : menu latéral coloré, cartes blanches, tableaux aérés.
+- Couleurs #273c88 (principale) et #c8187d (accent) ; coins arrondis de 5 px maximum pour boutons et champs ; organisation à la manière d'Odoo : grille des applications et barre du haut colorée avec les menus de l'application, cartes blanches, tableaux aérés.
 - CSP stricte : aucun script inline, aucun attribut style= ou onclick=. Tout le JS dans public/assets/js/app.js, tout le CSS dans public/assets/css/app.css.
 - Requêtes SQL préparées uniquement ; échappement avec e() dans les vues ; jeton CSRF sur chaque POST ; droit vérifié dans la route.
 - Toute modification de données importante passe par Audit::log() ; une demande de véhicule a en plus son historique (`Fleet::event()`).
 - Notifications : `Notifications::send()` (Platform) ; jamais d'e-mail envoyé pendant une requête web (file `notifications.email_status`, envoi par le worker).
 - Modification de schéma : nouveau fichier database/migrations/NNN_nom.sql + mise à jour de schema.sql + commande d'application dans le README.
-- Icônes : Font Awesome Free servi localement, helper `fa('fa-solid fa-…')` ; sprite `icon('nom')` pour le menu. Aucun CDN.
+- Icônes : Font Awesome Free servi localement, helper `fa('fa-solid fa-…')` ; sprite `icon('nom')` pour les boutons existants. Aucun CDN.
 
 # 6. Règles de sécurité et d'exploitation (impératives)
 
@@ -214,8 +216,9 @@ D'après docs/CADRAGE.md (état au 22 oct. 2026) :
 - 12 oct. 2026 (nuit) : page Pointages (`/pointages`, droit `board`, périmètre manager, aujourd'hui seulement pour RH/managers) au lieu du lien « Accès aux salles » du tableau de bord, derniers pointages cliquables vers la fiche de l'agent, bouton « Voir le rapport détaillé », correctif du mode sombre forcé sur téléphone.
 - 13 oct. 2026 : rapport Excel (.xlsx) de la page Agents (`/agents/export`, droit `export` : admin et RH) avec période (du/au, 93 jours max), filtre (arrivés, à l'heure, en retard, pas arrivés, télétravail, mission, congé), département et agent ; une ligne par agent et par jour + récapitulatif par agent ; classeur écrit par `App\Core\Xlsx` (sans extension zip).
 - 20 oct. 2026 : **Parc automobile, module 1** (migration `005_flotte.sql`) : directions/services et N+1, rôle `employe`, compte relié à une fiche, rôles Parc automobile ; véhicules, documents (alerte 30 j), chauffeurs ; demandes (ordre de mission), circuit N+1 → direction (hors ville, > 2 jours, week-end), refus motivé, urgence validée a posteriori ; affectation avec frise et verrou anti-double réservation, planning ; écran mission téléphone avec saisie hors réseau (IndexedDB) ; cloche + e-mails SMTP (`SMTP_*` dans .env) + rappel 1 h avant (worker) ; évaluation ; historique ; tableau de bord et paramètres.
-- 22 oct. 2026 : **nouvelle architecture réseau** (14 oct. : VLAN 102 et 4040 retirés de gi17, MikroTik injoignable depuis le VLAN 102 ; VM reliée directement au VLAN 3602 par ens19 = 10.0.4.249/24 ; publication Internet par la DMZ VLAN 3604, en attente) ; worker : remise à l'heure au démarrage (> 30 s), F16 en délai long et journal détaillé, tentatives toutes les 30 min après 5 échecs, battement de cœur, sauvegarde nocturne de la base (02:00, `./data/backups`, 14 jours) ; page Administration › État du service (`/etat-du-service`). Aucune migration (valeurs dans `settings`).
+- 22 oct. 2026 : **nouvelle architecture réseau** (14 oct. : VLAN 102 et 4040 retirés de gi17, MikroTik injoignable depuis le VLAN 102 ; VM reliée directement au VLAN 3602 par ens19 = 10.0.4.249/24 ; publication Internet par la DMZ VLAN 3604, en attente) ; worker : remise à l'heure au démarrage (> 30 s), F16 en délai long et journal détaillé, tentatives toutes les 30 min après 5 échecs, battement de cœur, sauvegarde nocturne de la base (02:00, `./data/backups`, 14 jours) ; page Paramètres › État du service (`/etat-du-service`). Aucune migration (valeurs dans `settings`).
 - 22 oct. 2026 (suite) : **import CSV du parc automobile** (`/flotte/import`, droit `fleet_manage`) : organisation (direction ; service ; N+1), véhicules (avec échéances assurance et contrôle technique), chauffeurs ; modèle téléchargeable, aperçu (créations, mises à jour, erreurs ligne par ligne), rien d'enregistré avant confirmation, transaction + `Audit::log('import_…')`. Aucune migration.
+- 3 nov. 2026 : **organisation en applications à la manière d'Odoo** : accueil `/applications` (grille), barre du haut avec les menus de l'application en cours (menus déroulants), menu du compte ; menu latéral supprimé. Aucune migration.
 - Questions ouvertes : sous-réseau de la DMZ (VLAN 3604) à fournir par la sécurité ; horaires réels et groupes à saisir ; parc automobile : nombre de véhicules et de sites, trackers GPS, serveur SMTP à fournir, anglais de l'interface ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.
