@@ -1,7 +1,7 @@
 -- Comptes, provinces et parc automobile (suite) :
 --   users.email          : adresse du compte (e-mail de bienvenue, notifications) ;
 --                          à défaut, l'adresse de la fiche employé reliée.
---   users.role « fleet » : profil Parc automobile (mêmes accès que les RH, plus la
+--   rôle « fleet »       : profil Parc automobile (mêmes accès que les RH, plus la
 --                          gestion du parc et la validation des demandes).
 --   provinces            : provinces créées par l'administrateur ; province de
 --                          rattachement d'un employé (employees.province_id),
@@ -16,9 +16,12 @@
 
 SET NAMES utf8mb4;
 
--- Comptes
+-- Comptes (rôle fleet : users.role est en texte, voir 007_roles_texte.sql)
+-- users.role en texte (rôles vérifiés en PHP par Auth::ROLES) : une migration ne
+-- réduit jamais une liste ENUM, sinon la rejouer échoue (« Data truncated ») dès
+-- qu'un rôle plus récent existe en base.
 ALTER TABLE users
-  MODIFY role ENUM('admin','rh','ceo','manager','lecteur','employe','fleet') NOT NULL DEFAULT 'lecteur';
+  MODIFY role VARCHAR(30) NOT NULL DEFAULT 'lecteur';
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS email VARCHAR(150) NULL COMMENT 'adresse du compte (sinon : celle de la fiche employé)' AFTER full_name;
 

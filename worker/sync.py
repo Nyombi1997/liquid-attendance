@@ -85,6 +85,11 @@ MARIADB_DUMP = os.environ.get("MARIADB_DUMP_BIN", "mariadb-dump")
 PHP = os.environ.get("PHP_BIN", "php")
 COMPUTE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "compute.php")
 FLEET_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fleet-tasks.php")
+MIGRATE_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "migrate.php")
+# bin/fleet-tasks.php : code de sortie quand une migration n'est pas appliquée
+EXIT_MIGRATIONS_PENDING = 3
+# Message « migration non appliquée » répété au plus une fois par heure (s'il ne change pas)
+PENDING_LOG_EVERY = 3600
 
 stop = threading.Event()
 
@@ -97,7 +102,7 @@ def now():
     return datetime.now()
 
 
-def db():
+def connect_db():
     return pymysql.connect(
         host=os.environ.get("DB_HOST", "db"),
         port=int(os.environ.get("DB_PORT", "3306")),
@@ -107,6 +112,47 @@ def db():
         charset="utf8mb4",
         autocommit=False,
     )
+
+
+class Db:
+    """Connexion à la base, rouverte explicitement quand elle est tombée.
+
+    PyMySQL a déprécié ping(reconnect=True) (« create a new connection if you
+    want to reconnect ») : ensure() vérifie la connexion par un ping simple et,
+    s'il échoue, ferme l'ancienne et en ouvre une nouvelle. Les threads gardent
+    le même objet Db, seule la connexion interne est remplacée.
+    """
+
+    def __init__(self):
+        self.raw = connect_db()
+
+    def ensure(self):
+        try:
+            self.raw.ping()
+        except pymysql.Error:
+            try:
+                self.raw.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self.raw = connect_db()  # une erreur ici remonte comme avant (base injoignable)
+            log("base de données : connexion rouverte")
+        return self
+
+    def cursor(self, *args):
+        return self.raw.cursor(*args)
+
+    def commit(self):
+        self.raw.commit()
+
+    def rollback(self):
+        self.raw.rollback()
+
+    def close(self):
+        self.raw.close()
+
+
+def db():
+    return Db()
 
 
 def load_devices():
@@ -227,16 +273,51 @@ def run_compute(args):
         return False
 
 
+pending_notice = {"text": None, "at": 0.0}
+
+
 def run_fleet_tasks():
-    """Lance bin/fleet-tasks.php (rappels, alertes d'expiration, e-mails) ; vrai si réussi."""
+    """Lance bin/fleet-tasks.php (rappels, alertes d'expiration, e-mails) ; vrai si réussi.
+
+    Migration non appliquée (code 3) : le message de fleet-tasks.php n'est écrit
+    que s'il change, ou une fois par heure, au lieu de toutes les minutes.
+    """
     try:
-        res = subprocess.run([PHP, FLEET_SCRIPT], timeout=600, check=False)
-        if res.returncode != 0:
-            log(f"ERREUR tâches du parc automobile : code de sortie {res.returncode}")
-        return res.returncode == 0
+        res = subprocess.run([PHP, FLEET_SCRIPT], timeout=600, check=False, capture_output=True, text=True)
     except Exception as exc:  # noqa: BLE001
         log(f"ERREUR tâches du parc automobile : {type(exc).__name__}: {exc}")
         return False
+    output = "\n".join(x for x in (res.stdout.strip(), res.stderr.strip()) if x)
+    if res.returncode == EXIT_MIGRATIONS_PENDING:
+        t = time.monotonic()
+        if output != pending_notice["text"] or t - pending_notice["at"] >= PENDING_LOG_EVERY:
+            log(f"ATTENTION {output or 'migration non appliquée : lancez php bin/migrate.php'}")
+            pending_notice.update(text=output, at=t)
+        return False
+    if pending_notice["text"] is not None:
+        log("tâches du parc automobile : migrations à jour, reprise")
+        pending_notice.update(text=None, at=0.0)
+    if output:
+        print(output, flush=True)
+    if res.returncode != 0:
+        log(f"ERREUR tâches du parc automobile : code de sortie {res.returncode}")
+    return res.returncode == 0
+
+
+def check_migrations():
+    """Au démarrage : signale une migration non appliquée (php bin/migrate.php --check)."""
+    try:
+        res = subprocess.run([PHP, MIGRATE_SCRIPT, "--check"], timeout=60, check=False, capture_output=True, text=True)
+    except Exception as exc:  # noqa: BLE001
+        log(f"ERREUR vérification des migrations : {type(exc).__name__}: {exc}")
+        return False
+    output = " ".join(x for x in (res.stdout.strip(), res.stderr.strip()) if x)
+    if res.returncode == 0:
+        log(output or "migrations à jour")
+        return True
+    log(f"ATTENTION {output or 'vérification des migrations en échec'}"
+        + (" ; le service continue, mais les tâches du parc automobile restent suspendues" if res.returncode == 3 else ""))
+    return False
 
 
 def fleet_loop():
@@ -427,7 +508,7 @@ class DeviceWorker(threading.Thread):
                 if conn is None:
                     conn = db()
                 else:
-                    conn.ping(reconnect=True)
+                    conn.ensure()
                 zk = connect_device(self.dev)
                 log(f"{self.label} : connectée ({'TCP' if getattr(zk, 'tcp', True) else 'UDP'})")
                 self.full_sync(zk, conn)
@@ -476,7 +557,7 @@ class DeviceWorker(threading.Thread):
 
     def set_live(self, conn, live):
         """Écoute en direct active ou non (indicateur « en écoute » de la plateforme)."""
-        conn.ping(reconnect=True)
+        conn.ensure()
         with conn.cursor() as cur:
             cur.execute("UPDATE devices SET live_since = " + ("NOW()" if live else "NULL") + " WHERE id = %s",
                         (self.dev["id"],))
@@ -487,8 +568,11 @@ class DeviceWorker(threading.Thread):
         try:
             if conn is None:
                 conn = db()
-            conn.rollback()
-            conn.ping(reconnect=True)
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass  # connexion tombée : rouverte juste en dessous
+            conn.ensure()
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE devices SET last_sync_at = NOW(), last_sync_ok = 0, last_error = %s, live_since = NULL "
@@ -538,7 +622,7 @@ class DeviceWorker(threading.Thread):
         if not uid or att.timestamp is None:
             return
         try:
-            conn.ping(reconnect=True)
+            conn.ensure()
             with conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM employees WHERE device_user_id = %s", (uid,))
                 if cur.fetchone() is None:
@@ -579,7 +663,7 @@ class DeviceWorker(threading.Thread):
         users = zk.get_users() or []
         records = zk.get_attendance() or []
 
-        conn.ping(reconnect=True)
+        conn.ensure()
         with conn.cursor() as cur:
             # Employés : création si inconnu, mise à jour du nom côté pointeuse ;
             # le nom affiché n'est remplacé que s'il est encore provisoire.
@@ -630,7 +714,7 @@ class DeviceWorker(threading.Thread):
     def heartbeat(self, zk, conn):
         """Vérifie que la connexion répond (une coupure silencieuse ne lève aucune erreur en écoute)."""
         offset = clock_offset(zk)
-        conn.ping(reconnect=True)
+        conn.ensure()
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE devices SET last_sync_ok = 1, last_error = NULL, clock_offset_sec = %s WHERE id = %s",
@@ -649,7 +733,7 @@ class DeviceWorker(threading.Thread):
         after = clock_offset(zk)
         self.offset = after
         log(f"{self.label} : horloge remise à l'heure de la VM ({moment}), écart avant {before:+d} s, après {after:+d} s")
-        conn.ping(reconnect=True)
+        conn.ensure()
         with conn.cursor() as cur:
             cur.execute("UPDATE devices SET clock_offset_sec = %s WHERE id = %s", (after, self.dev["id"]))
             cur.execute(
@@ -699,6 +783,7 @@ def main():
     if SLOW_DEVICES:
         log(f"pointeuses lentes ({', '.join(sorted(SLOW_DEVICES))}) : délai {SLOW_TIMEOUT:.0f} s, journal détaillé")
     safe_settings({"worker_started_at": stamp(), "worker_heartbeat_at": stamp()})
+    check_migrations()
     recompute = Recompute()
     workers = {}
     computers = []

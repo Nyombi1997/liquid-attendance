@@ -87,6 +87,7 @@ public/manifest.webmanifest, sw.js, offline.html   PWA (cache des fichiers versi
 bin/compute.php              calcul des journées (--days, --from/--to, --employee-device-id)
 bin/fleet-tasks.php          parc automobile : rappels avant départ, alertes d'expiration, envoi des e-mails (lancé par le worker)
 bin/create-admin.php         création / réinitialisation d'un compte admin
+bin/migrate.php              migrations de la base (table schema_migrations ; --dry-run, --check, --baseline[=NNN])
 worker/sync.py, run.sh       service de synchronisation (conteneur la-worker)
 database/schema.sql, seed.sql, migrations/NNN_*.sql, seed_fleet_demo.sql (démonstration, JAMAIS en production)
 tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkflowTest.php, FleetImportTest.php ; test_sync.py + faux module zk (tests/fakezk)
@@ -184,7 +185,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 - Requêtes SQL préparées uniquement ; échappement avec e() dans les vues ; jeton CSRF sur chaque POST ; droit vérifié dans la route.
 - Toute modification de données importante passe par Audit::log() ; une demande de véhicule a en plus son historique (`Fleet::event()`).
 - Notifications : `Notifications::send()` (Platform) ; jamais d'e-mail envoyé pendant une requête web (file `notifications.email_status`, envoi par le worker).
-- Modification de schéma : nouveau fichier database/migrations/NNN_nom.sql + mise à jour de schema.sql + commande d'application dans le README.
+- Modification de schéma : nouveau fichier database/migrations/NNN_nom.sql (rejouable, ne réduit jamais une liste ENUM) + mise à jour de schema.sql, **y compris la ligne de la migration dans l'INSERT de `schema_migrations`** en fin de fichier + ligne du tableau des migrations du README.
 - Icônes : Font Awesome Free servi localement, helper `fa('fa-solid fa-…')` ; sprite `icon('nom')` pour les boutons existants. Aucun CDN.
 
 # 6. Règles de sécurité et d'exploitation (impératives)
@@ -200,14 +201,15 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 # 7. Workflow
 
 - Développement sur le poste → commit → je fais moi-même git push.
-- Déploiement sur la VM : procédure détaillée et interdits dans README.md, section « Déploiement : procédure à suivre » (sauvegarde, git pull --ff-only, toutes les migrations dans l'ordre, sudo docker compose up -d --build app worker, vérifications, retour arrière). En résumé : cd ~/liquid-attendance && git pull --ff-only && (migrations) && sudo docker compose up -d --build app worker && sudo docker compose logs -f worker
+- Déploiement sur la VM : procédure détaillée et interdits dans README.md, section « Déploiement : procédure à suivre » (sauvegarde, git pull --ff-only, reconstruction, migrations par `bin/migrate.php`, vérifications, retour arrière). En résumé : sauvegarde de la base, puis `cd ~/liquid-attendance && git pull --ff-only && sudo docker compose up -d --build app worker && sudo docker compose exec worker php bin/migrate.php && sudo docker compose logs -f worker`.
+- **Une seule fois** (première mise à jour avec `bin/migrate.php`, base de production où 001 à 006 sont appliquées) : `sudo docker compose exec worker php bin/migrate.php --baseline=006` avant `php bin/migrate.php` (qui appliquera alors 007). Jamais de `--baseline` ensuite.
 - Le .env n'est pas dans git : il se modifie uniquement sur la VM.
-- Tests locaux : php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php tests/FleetImportTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
+- Tests locaux : php bin/migrate.php sur une base jetable (vide, puis existante avec --baseline), php tests/DayCalculatorTest.php, php tests/CalendarTest.php, php tests/FleetWorkflowTest.php, php tests/FleetImportTest.php, php -l sur les fichiers modifiés, python3 -m py_compile worker/sync.py. Les pointeuses ne sont pas joignables depuis le poste : simule-les avec un faux module zk.
 - À la fin de chaque tâche, donne-moi les commandes exactes à lancer sur la VM, dans l'ordre.
 
-Commande de migration (sur la VM, depuis ~/liquid-attendance) :
-`sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/NNN_nom.sql`
-Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`), `005_flotte.sql` (parc automobile : organisation, rôles, véhicules, chauffeurs, demandes, missions, notifications), `006_comptes_provinces.sql` (e-mail des comptes, rôle `fleet`, provinces, types de véhicule, département des véhicules, `mail_outbox`). Toutes rejouables sans risque.
+Migrations (sur la VM, depuis ~/liquid-attendance), suivies dans la table `schema_migrations` (nom, date, sha256, mode) :
+`sudo docker compose exec worker php bin/migrate.php` (applique dans l'ordre celles qui manquent, transaction si la migration ne touche qu'aux données, arrêt à la première erreur) ; `--dry-run` (liste), `--check` (code 3 si en retard), `--baseline[=NNN]` (marquer sans exécuter, une seule fois). Le worker (au démarrage), `bin/fleet-tasks.php` (tâches suspendues, code 3) et Paramètres › État du service signalent une migration non appliquée (`App\Core\Migrations::warning()`) au lieu de planter.
+Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`), `005_flotte.sql` (parc automobile : organisation, rôles, véhicules, chauffeurs, demandes, missions, notifications), `006_comptes_provinces.sql` (e-mail des comptes, rôle `fleet`, provinces, types de véhicule, département des véhicules, `mail_outbox`), `007_roles_texte.sql` (`users.role` en VARCHAR(30), rôles vérifiés en PHP par `Auth::ROLES`). Toutes rejouables sans risque.
 Données d'exemple du parc : `database/seed_fleet_demo.sql` (comptes `grace.mbuyi`, `sarah.ilunga`, `jean.mukendi`, `patrick.lunda`, `didier.kasongo`…, mot de passe `demo-flotte-2026`) — base de test uniquement.
 
 # 8. État et questions ouvertes
@@ -228,6 +230,7 @@ D'après docs/CADRAGE.md (état au 22 oct. 2026) :
 - 3 nov. 2026 : **organisation en applications à la manière d'Odoo** : accueil `/applications` (grille), barre du haut avec les menus de l'application en cours (menus déroulants), menu du compte ; menu latéral supprimé. Aucune migration.
 - 3 nov. 2026 (suite) : **création d'un agent** par l'administrateur (`/employes/nouveau`, droit `manage`, boutons sur Employés et Agents) ; n° de pointeuse obligatoire et unique, relié aux badges à la synchronisation. Aucune migration.
 - 6 nov. 2026 : **comptes, provinces et parc automobile (suite)** (migration `006_comptes_provinces.sql`) : mots de passe à 8 caractères avec jauge de solidité ; e-mail du compte et e-mail de bienvenue ; e-mail à l'agent quand sa disponibilité change (congé…) ; compte existant relié à une fiche depuis la fiche employé ; provinces (admin) assignées par RH/admin/fleet, « Mission hors de <province> », texte du circuit retiré du formulaire de demande ; types de véhicule gérés ; profil `fleet` (accès RH + gestion du parc + validation) ; véhicules attribués aux chauffeurs (e-mail) et aux départements ; e-mail d'approbation au demandeur ; `.env` : noms `MAIL_FROM`, `MAIL_NAME`, `SMTP_PASS` et `SMTP_SECURE=true` acceptés.
+- 6 nov. 2026 (suite) : **suivi des migrations** après l'incident de déploiement (002 rejouée : « Data truncated for column 'role' », 006 non appliquée) : table `schema_migrations`, `bin/migrate.php` (worker), tolérance d'une base en retard (worker, fleet-tasks, État du service), `users.role` en texte (migration `007_roles_texte.sql`), worker : reconnexion explicite à la base (classe `Db`, plus de `ping(reconnect=True)`).
 - Questions ouvertes : sous-réseau de la DMZ (VLAN 3604) à fournir par la sécurité ; horaires réels et groupes à saisir ; parc automobile : nombre de véhicules et de sites, trackers GPS, serveur SMTP à fournir, anglais de l'interface ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

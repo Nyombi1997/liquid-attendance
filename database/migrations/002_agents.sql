@@ -15,9 +15,12 @@ CREATE TABLE IF NOT EXISTS departments (
   CONSTRAINT fk_dept_parent FOREIGN KEY (parent_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- Comptes : rôles CEO (tout voir, rien modifier) et Manager (son département)
+-- Comptes : rôles CEO (tout voir, rien modifier) et Manager (son département).
+-- users.role en texte (rôles vérifiés en PHP par Auth::ROLES) : une migration ne
+-- réduit jamais une liste ENUM, sinon la rejouer échoue (« Data truncated ») dès
+-- qu'un rôle plus récent existe en base.
 ALTER TABLE users
-  MODIFY role ENUM('admin','rh','ceo','manager','lecteur') NOT NULL DEFAULT 'lecteur';
+  MODIFY role VARCHAR(30) NOT NULL DEFAULT 'lecteur';
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS department_id INT UNSIGNED NULL COMMENT 'département du manager' AFTER role;
 ALTER TABLE users

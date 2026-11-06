@@ -33,6 +33,14 @@ $backupBadge = [
   </div>
 </div>
 
+<?php if ($migrationWarning !== null): ?>
+  <p class="callout callout-danger" role="alert"><?= fa('fa-solid fa-triangle-exclamation') ?>
+    <strong>Base de données en retard sur le code</strong> : <?= e($migrationWarning) ?>.
+    Sur la VM : <code>sudo docker compose exec worker php bin/migrate.php</code>. En attendant, les tâches du parc automobile (rappels, alertes, e-mails) sont suspendues.</p>
+<?php else: ?>
+  <p class="muted small"><?= fa('fa-solid fa-circle-check') ?> Base à jour : <?= (int) $migrationsApplied ?> migration(s) appliquée(s).</p>
+<?php endif; ?>
+
 <section class="kpis">
   <div class="kpi">
     <span class="kpi-label">Service de synchronisation</span>

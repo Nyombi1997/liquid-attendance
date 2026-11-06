@@ -14,6 +14,7 @@ declare(strict_types=1);
  *      bienvenue, disponibilité d'un employé sans compte, véhicule attribué…).
  *   Trois essais au plus par e-mail. Toute la plateforme passe par ici : avec
  *   FLEET_TASKS_INTERVAL=0, aucun e-mail n'est envoyé.
+ * Si une migration n'est pas appliquée : aucune tâche, message et code de sortie 3.
  *   docker compose exec worker php bin/fleet-tasks.php
  */
 
@@ -22,9 +23,18 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 use App\Core\Config;
 use App\Core\Database;
 use App\Core\Mailer;
+use App\Core\Migrations;
 use App\Modules\Fleet\Services\Fleet;
 use App\Modules\Fleet\Services\FleetNotify;
 use App\Modules\Platform\Services\Notifications;
+
+// Base en retard sur le code (migration non appliquée) : rien n'est lancé, un
+// message explicite au lieu d'erreurs SQL. Code de sortie 3 (le worker ne répète
+// le message que s'il change, ou une fois par heure).
+if (($warning = Migrations::warning()) !== null) {
+    fwrite(STDERR, '[flotte] tâches suspendues : ' . $warning . "\n");
+    exit(3);
+}
 
 $settings = Fleet::settings();
 $done = ['rappels' => 0, 'alertes' => 0, 'e-mails' => 0, 'échecs' => 0];

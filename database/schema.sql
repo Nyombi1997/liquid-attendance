@@ -22,7 +22,8 @@ CREATE TABLE departments (
   CONSTRAINT fk_dept_parent FOREIGN KEY (parent_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- role       : droits de la plateforme (employe : module Parc automobile seulement ;
+-- role       : droits de la plateforme, en texte (valeurs vérifiées en PHP : Auth::ROLES)
+--              (employe : module Parc automobile seulement ;
 --              fleet : profil Parc automobile, accès des RH + gestion du parc et validation)
 -- email      : adresse du compte (sinon : celle de la fiche employé reliée)
 -- employee_id: fiche employé du titulaire du compte (demandes de véhicule, chauffeur, N+1)
@@ -33,7 +34,7 @@ CREATE TABLE users (
   full_name     VARCHAR(120) NOT NULL,
   email         VARCHAR(150) NULL COMMENT 'adresse du compte (sinon : celle de la fiche employé)',
   password_hash VARCHAR(255) NOT NULL,
-  role          ENUM('admin','rh','ceo','manager','lecteur','employe','fleet') NOT NULL DEFAULT 'lecteur',
+  role          VARCHAR(30)  NOT NULL DEFAULT 'lecteur' COMMENT 'rôle de la plateforme, voir Auth::ROLES',
   department_id INT UNSIGNED NULL COMMENT 'département du manager',
   employee_id   INT UNSIGNED NULL COMMENT 'fiche employé du titulaire du compte',
   fleet_role    ENUM('demandeur','validateur','gestionnaire','chauffeur','direction') NOT NULL DEFAULT 'demandeur'
@@ -521,3 +522,27 @@ INSERT IGNORE INTO settings (name, value) VALUES
   ('fleet_order_required', 'hors_ville'),
   ('fleet_reminder_minutes', '60'),
   ('fleet_doc_alert_days', '30');
+
+-- ---------------------------------------------------------------------------
+-- Suivi des migrations (bin/migrate.php)
+-- ---------------------------------------------------------------------------
+
+-- Une ligne par fichier de database/migrations déjà appliqué. Une installation
+-- neuve inclut toutes les migrations ci-dessous (mode « schema », sans empreinte) :
+-- toute nouvelle migration doit être ajoutée à cette liste en même temps que
+-- ses changements sont reportés dans ce fichier.
+CREATE TABLE schema_migrations (
+  name       VARCHAR(190) NOT NULL PRIMARY KEY COMMENT 'fichier de database/migrations',
+  applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  checksum   CHAR(64)     NULL COMMENT 'sha256 du fichier au moment de l''application',
+  mode       VARCHAR(10)  NOT NULL DEFAULT 'applique' COMMENT 'applique, baseline ou schema'
+) ENGINE=InnoDB;
+
+INSERT INTO schema_migrations (name, mode) VALUES
+  ('001_live.sql', 'schema'),
+  ('002_agents.sql', 'schema'),
+  ('003_identifiants.sql', 'schema'),
+  ('004_calendrier.sql', 'schema'),
+  ('005_flotte.sql', 'schema'),
+  ('006_comptes_provinces.sql', 'schema'),
+  ('007_roles_texte.sql', 'schema');

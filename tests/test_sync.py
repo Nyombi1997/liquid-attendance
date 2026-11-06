@@ -14,6 +14,7 @@ sauvegarde (faux mariadb-dump) et conservation de 14 jours.
 """
 import json
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -145,6 +146,8 @@ class Connection:
         return Cursor(self.db)
 
     def ping(self, reconnect=False):
+        if reconnect:
+            raise AssertionError("ping(reconnect=True) est déprécié dans PyMySQL : nouvelle connexion attendue")
         if self.db.down:
             raise OperationalError(2003, "Can't connect to MySQL server")
 
@@ -203,7 +206,10 @@ sync.run_compute = fake_compute
 
 FLEET_RUNS = []
 sync.FLEET_TASKS_INTERVAL = 0.5
+real_run_fleet_tasks = sync.run_fleet_tasks
 sync.run_fleet_tasks = lambda: FLEET_RUNS.append(time.monotonic()) or True
+MIGRATION_CHECKS = []
+sync.check_migrations = lambda: MIGRATION_CHECKS.append(1) or True
 per_agent_calls = lambda since=0: [(t, a) for t, a in COMPUTES[since:] if a[0].startswith("--employee-device-id=")]  # noqa: E731
 
 fail = 0
@@ -462,6 +468,46 @@ def scenario():
         os.kill(os.getpid(), signal.SIGTERM)
 
 
+def test_db_reconnect():
+    """Connexion tombée : nouvelle connexion explicite, sans ping(reconnect=True)."""
+    conn = sync.db()
+    first = conn.raw
+    conn.ensure()
+    check("base : connexion vivante conservée", conn.raw is first)
+    DB.down = True
+    try:
+        conn.ensure()
+    finally:
+        DB.down = False
+    check("base : nouvelle connexion après une coupure", conn.raw is not first)
+
+
+def test_fleet_pending_migration():
+    """fleet-tasks.php en code 3 (migration en attente) : message écrit une fois, pas à chaque passage."""
+    import tempfile
+    logs = []
+    saved_log, saved_script = sync.log, sync.FLEET_SCRIPT
+    sync.log = logs.append
+    with tempfile.TemporaryDirectory() as tmp:
+        script = os.path.join(tmp, "fleet.php")
+        try:
+            with open(script, "w") as f:
+                f.write('<?php fwrite(STDERR, "[flotte] tâches suspendues : migration 099_test.sql non appliquée : lancez php bin/migrate.php\\n"); exit(3);')
+            sync.FLEET_SCRIPT = script
+            results = [real_run_fleet_tasks() for _ in range(3)]
+            warned = [x for x in logs if "099_test.sql non appliquée" in x]
+            check("migration en attente : tâches suspendues", results == [False] * 3, str(results))
+            check("migration en attente : message écrit une seule fois", len(warned) == 1, str(logs))
+            with open(script, "w") as f:
+                f.write("<?php exit(0);")
+            check("migrations à jour : reprise", real_run_fleet_tasks() and any("reprise" in x for x in logs), str(logs))
+        finally:
+            sync.log, sync.FLEET_SCRIPT = saved_log, saved_script
+
+
+test_db_reconnect()
+if shutil.which(sync.PHP):
+    test_fleet_pending_migration()
 test_clock_window()
 test_recompute_queue()
 test_backup()
@@ -471,6 +517,7 @@ start = time.monotonic()
 sync.main()
 driver.join(5)
 elapsed = time.monotonic() - start
+check("migrations vérifiées au démarrage", len(MIGRATION_CHECKS) == 1, str(MIGRATION_CHECKS))
 check("tâches du parc automobile lancées régulièrement", len(FLEET_RUNS) >= 2, str(len(FLEET_RUNS)))
 check("arrêt propre sur SIGTERM, en quelques secondes", sync.stop.is_set() and elapsed < 60 and not driver.is_alive(),
       f"{elapsed:.1f} s")

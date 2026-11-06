@@ -22,8 +22,11 @@ ALTER TABLE departments
 ALTER TABLE departments
   ADD CONSTRAINT fk_dept_head FOREIGN KEY IF NOT EXISTS (head_employee_id) REFERENCES employees(id) ON DELETE SET NULL;
 
+-- users.role en texte (rôles vérifiés en PHP par Auth::ROLES) : une migration ne
+-- réduit jamais une liste ENUM, sinon la rejouer échoue (« Data truncated ») dès
+-- qu'un rôle plus récent existe en base.
 ALTER TABLE users
-  MODIFY role ENUM('admin','rh','ceo','manager','lecteur','employe') NOT NULL DEFAULT 'lecteur';
+  MODIFY role VARCHAR(30) NOT NULL DEFAULT 'lecteur';
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS employee_id INT UNSIGNED NULL COMMENT 'fiche employé du titulaire du compte' AFTER department_id;
 ALTER TABLE users

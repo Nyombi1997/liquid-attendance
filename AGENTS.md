@@ -77,7 +77,9 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 - Un bouton qui ne contient qu'une icône a un `aria-label` (et un `title` si utile).
 
 ### Base de données
-- Tout changement de structure = **deux endroits** : `database/schema.sql` (installation neuve) **et** une nouvelle migration `database/migrations/NNN_nom.sql` **rejouable sans risque** (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT … FOREIGN KEY IF NOT EXISTS`). Ajouter la migration au tableau et à la commande du README.
+- Tout changement de structure = **deux endroits** : `database/schema.sql` (installation neuve) **et** une nouvelle migration `database/migrations/NNN_nom.sql` **rejouable sans risque** (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT … FOREIGN KEY IF NOT EXISTS`). Ajouter la migration au tableau du README **et** à l'INSERT de `schema_migrations` en fin de `schema.sql` (installation neuve : migrations déjà incluses).
+- Une migration **ne réduit jamais** une liste de valeurs `ENUM` (`MODIFY … ENUM(…)` avec moins de valeurs que la base n'en contient : « Data truncated »). Préférer un `VARCHAR` validé en PHP pour une liste qui grandit (ex. `users.role`, `Auth::ROLES`).
+- Migrations appliquées par `bin/migrate.php` (table `schema_migrations`), jamais à la main ; tester sur une base jetable : vide, puis existante avec `--baseline`.
 - Les tables `punches` (copie fidèle des pointeuses) ne sont jamais modifiées par l'application.
 
 ### Interface et design
@@ -132,7 +134,7 @@ docker stop la-test-db
 ```
 
 - Tester chaque rôle concerné (au moins `admin`, `rh`, `ceo`, `manager`) : codes HTTP attendus (200 / 403), périmètre du manager dans la page **et** dans `/api/direct`. Parc automobile : charger `database/seed_fleet_demo.sql` (base de test seulement) et tester avec ses comptes (gestionnaire, validateur, direction, demandeur, chauffeur ; mot de passe `demo-flotte-2026`).
-- Pour une migration : l'appliquer sur une base créée avec l'ancien `schema.sql` (`git show HEAD:database/schema.sql`), deux fois de suite.
+- Pour une migration : l'appliquer sur une base créée avec l'ancien `schema.sql` (`git show HEAD:database/schema.sql`), deux fois de suite avec le client `mariadb` (rejouable), puis avec `php bin/migrate.php` (base vide, et base existante après `--baseline=<précédente>`).
 - Tout fichier temporaire va dans le dossier de travail temporaire, jamais dans le dépôt.
 
 ## Documentation

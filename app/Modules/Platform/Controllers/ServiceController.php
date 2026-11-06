@@ -5,10 +5,11 @@ namespace App\Modules\Platform\Controllers;
 
 use App\Core\Controller;
 use App\Core\Database;
+use App\Core\Migrations;
 
 /**
  * Paramètres > État du service : battement de cœur du worker, pointeuses,
- * taille de la base, dernière sauvegarde. Les valeurs du worker sont écrites
+ * taille de la base, dernière sauvegarde, migrations en retard (bin/migrate.php). Les valeurs du worker sont écrites
  * par worker/sync.py dans la table settings (worker_*, compute_last_at, backup_*).
  */
 final class ServiceController extends Controller
@@ -69,6 +70,8 @@ final class ServiceController extends Controller
             'active'    => count(array_filter($devices, static fn(array $d) => (bool) $d['active'])),
             'dbSize'    => array_sum(array_map(static fn(array $t) => (int) $t['bytes'], $tables)),
             'tables'    => array_slice($tables, 0, 8),
+            'migrationWarning' => Migrations::warning(),
+            'migrationsApplied' => count(Migrations::applied(Database::pdo())),
         ]);
     }
 }

@@ -260,22 +260,7 @@ comm -23 <(grep -oE '^[A-Z_]+' .env.example | sort -u) <(grep -oE '^[A-Z_]+' .en
 
 Affiche les réglages présents dans `.env.example` mais absents du `.env`. Ils ont tous une valeur par défaut dans le code : **ne rien ajouter** sans instruction, sauf si le message de commit ou Beni le demande. Ne jamais afficher le contenu du `.env` (mots de passe) dans un compte rendu.
 
-**Étape 6 : migrations de la base (avant de reconstruire).**
-
-Toutes les migrations sont rejouables sans risque : on les applique **toutes, dans l'ordre**, à chaque mise à jour. La boucle s'arrête à la première erreur.
-
-```bash
-mkdir -p data/backups
-for f in $(ls database/migrations/*.sql | sort); do
-  echo "== $f"
-  sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < "$f" \
-    || { echo "ÉCHEC : $f"; break; }
-done
-```
-
-Attendu : une ligne `== …` par fichier et aucun `ÉCHEC`. En cas d'échec : **ne pas reconstruire**, ne pas modifier la migration, copier le message d'erreur et le signaler (l'application en place continue de tourner).
-
-**Étape 7 : reconstruire et relancer l'application et le worker.**
+**Étape 6 : reconstruire et relancer l'application et le worker.**
 
 ```bash
 sudo docker compose up -d --build app worker
@@ -283,23 +268,48 @@ sudo docker compose up -d --build app worker
 
 Ne relance que `la-app` et `la-worker` ; la base n'est pas redémarrée. Si `docker-compose.yml` a changé pour `db`, `phpmyadmin` ou `acme` (étape 4), lancer ensuite `sudo docker compose up -d` (sans `down`).
 
+Entre cette étape et la suivante, le nouveau code peut tourner sur une base pas encore migrée : il le tolère. Le worker écrit au démarrage « ATTENTION migration 00X non appliquée : lancez php bin/migrate.php », les tâches du parc automobile (rappels, alertes, e-mails) restent suspendues, et Paramètres › État du service affiche la même alerte. Tout reprend seul une fois l'étape 7 faite.
+
+**Étape 6 bis : une seule fois, première mise à jour avec le suivi des migrations.**
+
+À faire uniquement si l'étape 7 répond « suivi des migrations absent » : la base de production a été créée avant `bin/migrate.php` (table `schema_migrations` absente). Sur la VM actuelle, les migrations **001 à 006 sont déjà appliquées** (006 à la main le 6 nov. 2026) : on les marque comme appliquées sans les exécuter, **jusqu'à 006 seulement**, pour que 007 et les suivantes s'appliquent normalement :
+
+```bash
+sudo docker compose exec worker php bin/migrate.php --baseline=006 --dry-run   # attendu : 001 à 006 « serait marquée », « restent à appliquer : 007… »
+sudo docker compose exec worker php bin/migrate.php --baseline=006
+```
+
+Ne jamais relancer `--baseline` ensuite : une migration marquée n'est plus jamais exécutée. (`--baseline` sans numéro marque **toutes** les migrations présentes : à réserver à une base dont on sait qu'elle les a toutes.)
+
+**Étape 7 : migrations de la base.**
+
+```bash
+sudo docker compose exec worker php bin/migrate.php --dry-run   # liste ce qui va être appliqué, sans rien changer
+sudo docker compose exec worker php bin/migrate.php
+```
+
+`bin/migrate.php` applique, dans l'ordre, uniquement les migrations pas encore enregistrées dans la table `schema_migrations` (nom, date, empreinte sha256), puis les enregistre. Attendu : « appliquée : NNN_….sql » pour chaque nouvelle migration puis « terminé », ou « base à jour ». Il s'arrête à la **première erreur**, avec la migration, l'instruction et le message SQL : **ne pas modifier la migration** sur la VM, copier le message et le signaler (l'application tourne, avec l'alerte de l'étape 6). Une migration de données est annulée en entier ; une migration de structure peut s'être appliquée en partie, mais elle est écrite pour être relancée sans risque une fois la cause corrigée.
+
+Vérification : `sudo docker compose exec worker php bin/migrate.php --check` → « base à jour (N migrations appliquées) ».
+
 **Étape 8 : vérifications.**
 
 ```bash
 sudo docker compose ps                                                     # tous « Up », la-db « healthy »
 curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1:8443/connexion  # attendu : 200
-sleep 90; sudo docker compose logs --since 3m worker | grep -E "synchro complète|ERREUR" | tail -20
+sudo docker compose restart worker                                         # relit l'état des migrations au démarrage
+sleep 90; sudo docker compose logs --since 3m worker | grep -E "synchro complète|migrations|ATTENTION|ERREUR" | tail -20
 ```
 
-Attendu dans le journal du worker : une ligne « synchro complète » pour chaque pointeuse d'étage (10.0.4.18, .20, .7, .15). Des erreurs sur 10.0.4.4 et 10.0.4.5 (F16, NOC et IT Room) sont connues et ne bloquent rien. Des erreurs « base de données » ou sur les pointeuses d'étage : passer au retour arrière ou signaler.
+Attendu dans le journal du worker : « [migrations] base à jour », puis une ligne « synchro complète » pour chaque pointeuse d'étage (10.0.4.18, .20, .7, .15). Des erreurs sur 10.0.4.4 et 10.0.4.5 (F16, NOC et IT Room) sont connues et ne bloquent rien. Une ligne « ATTENTION … non appliquée » : refaire l'étape 7. Des erreurs « base de données » ou sur les pointeuses d'étage : passer au retour arrière ou signaler.
 
-Contrôle dans le navigateur (compte admin) : https://10.169.153.144:8443/etat-du-service : service « En marche », pointeuses d'étage « en écoute ».
+Contrôle dans le navigateur (compte admin) : https://10.169.153.144:8443/etat-du-service : « Base à jour », service « En marche », pointeuses d'étage « en écoute ».
 
-**Étape 9 : compte rendu à Beni.** Indiquer : version avant (ANCIEN) et après (`git rev-parse --short HEAD`), nom du fichier de sauvegarde de l'étape 2, migrations appliquées, résultat de chaque vérification de l'étape 8, réglages `.env` manquants signalés à l'étape 5, et toute anomalie.
+**Étape 9 : compte rendu à Beni.** Indiquer : version avant (ANCIEN) et après (`git rev-parse --short HEAD`), nom du fichier de sauvegarde de l'étape 2, sortie de `bin/migrate.php` (migrations appliquées), résultat de chaque vérification de l'étape 8, réglages `.env` manquants signalés à l'étape 5, et toute anomalie.
 
 ### B. Retour arrière
 
-Les migrations ne font qu'ajouter (colonnes, tables, index) : l'ancien code fonctionne avec la base migrée. On revient donc d'abord sur **le code seul**.
+Les migrations ne font qu'ajouter ou élargir (colonnes, tables, index, `users.role` passé en texte) : l'ancien code fonctionne avec la base migrée. On revient donc d'abord sur **le code seul**.
 
 ```bash
 cd ~/liquid-attendance
@@ -327,7 +337,7 @@ Seulement sur instruction de Beni. Le nouveau serveur doit avoir : Docker et le 
 3. **Nouveau serveur** : `git clone https://github.com/Nyombi1997/liquid-attendance.git ~/liquid-attendance`, y placer `.env` et les dossiers `data/storage`, `data/certs`, puis `mkdir -p data/backups`.
 4. Démarrer la base seule et attendre « healthy » : `sudo docker compose up -d db` puis `sudo docker compose ps db`. Elle se crée vide avec `schema.sql` et `seed.sql`.
 5. Charger la sauvegarde (elle remplace les tables créées à l'étape 4) : commande `gunzip -c … | … mariadb …` de la partie B.
-6. Appliquer les migrations (étape 6 de la partie A), puis `sudo docker compose up -d --build`, puis les vérifications de l'étape 8.
+6. `sudo docker compose up -d --build`, puis `sudo docker compose exec worker php bin/migrate.php` (étape 7 de la partie A ; la sauvegarde contient déjà la table `schema_migrations`), puis les vérifications de l'étape 8.
 7. **Ancien serveur** : laisser la plateforme arrêtée (deux workers connectés aux mêmes pointeuses se gênent). Ne supprimer ses données qu'après accord écrit de Beni.
 8. Mettre à jour l'adresse du serveur dans `README.md`, `CLAUDE.md` et `docs/CADRAGE.md` (à faire sur le poste de développement, pas sur le serveur).
 
@@ -428,18 +438,21 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 
 ### Appliquer une migration sur une base existante
 
-Dans une mise à jour, c'est l'étape 6 de la partie A (boucle sur tous les fichiers). `database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide). Les changements de structure arrivent ensuite sous forme de fichiers `database/migrations/NNN_*.sql`, à appliquer une fois, dans l'ordre, après le `git pull` et **avant** de reconstruire les conteneurs (le nouveau code utilise les nouvelles colonnes) :
+Dans une mise à jour, ce sont les étapes 6 et 7 de la partie A. `database/schema.sql` n'est chargé qu'au tout premier démarrage (volume vide) ; il inclut toutes les migrations existantes et les enregistre dans `schema_migrations`. Ensuite, les changements de structure arrivent sous forme de fichiers `database/migrations/NNN_*.sql`, appliqués par `bin/migrate.php` (dans le conteneur worker) :
 
 ```bash
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/001_live.sql
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/002_agents.sql
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/003_identifiants.sql
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/004_calendrier.sql
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/005_flotte.sql
-sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/006_comptes_provinces.sql
+sudo docker compose exec worker php bin/migrate.php --dry-run      # ce qui serait appliqué
+sudo docker compose exec worker php bin/migrate.php                # appliquer ce qui manque, dans l'ordre
+sudo docker compose exec worker php bin/migrate.php --check        # vérifier (code de sortie 3 si en retard)
+sudo docker compose exec worker php bin/migrate.php --baseline=006 # UNE SEULE FOIS, voir l'étape 6 bis
 ```
 
-Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`). Une nouvelle installation n'en a pas besoin.
+- Table `schema_migrations` : nom du fichier, date d'application, empreinte sha256, mode (`applique`, `baseline`, `schema`). Une migration enregistrée n'est **jamais rejouée** ; un fichier modifié après son application est signalé (« empreinte différente »), pas rejoué.
+- Une migration qui ne touche qu'aux données s'applique dans une **transaction** ; une migration de structure (CREATE, ALTER…) ne peut pas l'être avec MariaDB : elle s'applique instruction par instruction et doit rester **rejouable sans risque** (`IF NOT EXISTS`) au cas où elle échoue en route.
+- Arrêt à la **première erreur**, message avec la migration, le n° et le début de l'instruction, l'erreur SQL. Deux exécutions simultanées sont impossibles (verrou).
+- Une migration ne **réduit jamais** une liste de valeurs (ENUM) : rejouée sur une base où une valeur plus récente existe, elle échouerait (« Data truncated », incident du 6 nov. 2026). Les rôles des comptes (`users.role`) sont en texte depuis `007_roles_texte.sql` et vérifiés en PHP (`Auth::ROLES`).
+- Le code tolère une base en retard : le worker (au démarrage) et `bin/fleet-tasks.php` écrivent « migration 00X non appliquée : lancez php bin/migrate.php » au lieu de planter (tâches du parc suspendues, message répété au plus une fois par heure), et Paramètres › État du service affiche l'alerte.
+- Base vide (sans aucune table, hors Docker) : `bin/migrate.php` charge `schema.sql` puis `seed.sql`.
 
 | Migration | Contenu |
 |---|---|
@@ -449,6 +462,7 @@ Les migrations peuvent être relancées sans risque (`ADD COLUMN IF NOT EXISTS`,
 | `004_calendrier.sql` | Calendrier : table `work_statuses` (historique des disponibilités avec leur période), reprise des statuts en cours |
 | `005_flotte.sql` | Parc automobile : `departments.kind` et `head_employee_id` (N+1), rôle `employe`, `users.employee_id` et `fleet_role`, tables `notifications`, `fleet_vehicles`, `fleet_vehicle_documents`, `fleet_drivers`, `fleet_driver_vehicles`, `fleet_requests`, `fleet_request_events`, `fleet_missions`, `fleet_ratings`, paramètres `fleet_*` |
 | `006_comptes_provinces.sql` | Comptes : `users.email`, rôle `fleet` (profil Parc automobile) ; table `provinces` et `employees.province_id` ; table `fleet_vehicle_types` (types de véhicule, `vehicle_type` passé en texte), `fleet_vehicles.department_id` ; file d'e-mails `mail_outbox` |
+| `007_roles_texte.sql` | `users.role` en `VARCHAR(30)` (rôles vérifiés en PHP par `Auth::ROLES`) ; 002, 005 et 006 ne réduisent plus la liste des rôles quand on les rejoue |
 
 Les photos des agents sont enregistrées dans `./data/storage/photos` et les fichiers du parc automobile (ordres de mission, documents des véhicules, photos des compteurs) dans `./data/storage/fleet` (volume monté dans le conteneur `app`, hors du dossier public) : ils sont conservés lors des mises à jour et inclus dans la sauvegarde de `./data`.
 
@@ -492,7 +506,7 @@ app/
       Views/
   Core/Mailer.php          envoi SMTP sans dépendance (utilisé par le worker)
   Views/                   gabarit commun, pages d'erreur
-bin/                       compute.php (calcul), fleet-tasks.php (rappels, alertes, envoi de tous les e-mails), create-admin.php
+bin/                       compute.php (calcul), fleet-tasks.php (rappels, alertes, envoi de tous les e-mails), migrate.php (migrations), create-admin.php
 config/config.php          configuration lue depuis .env
 database/                  schema.sql, seed.sql (chargés au premier démarrage), migrations/, seed_fleet_demo.sql (démonstration, jamais en production)
 docker/                    images app (Apache + HTTPS) et worker
