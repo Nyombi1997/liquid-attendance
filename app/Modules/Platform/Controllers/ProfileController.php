@@ -24,8 +24,8 @@ final class ProfileController extends Controller
 
         if (!password_verify($current, (string) $hash)) {
             flash('error', 'Mot de passe actuel incorrect.');
-        } elseif (mb_strlen($new) < 12) {
-            flash('error', 'Le nouveau mot de passe doit contenir au moins 12 caractères.');
+        } elseif ($error = Auth::passwordError($new)) {
+            flash('error', $error);
         } elseif ($new !== $confirm) {
             flash('error', 'Les deux saisies ne correspondent pas.');
         } else {

@@ -93,7 +93,7 @@ final class Fleet
         if (!$requester && $req['validation'] === 'en_attente' && !in_array($req['status'], ['refusee', 'annulee'], true)) {
             if ($req['step'] === 'n1' && (int) $req['n1_user_id'] === Auth::id()) {
                 $validate = 'n1';
-            } elseif ($req['step'] === 'direction' && (Auth::user()['fleet_role'] ?? '') === 'direction') {
+            } elseif ($req['step'] === 'direction' && Auth::isFleetDirection()) {
                 $validate = 'direction';
             }
         }
@@ -190,11 +190,51 @@ final class Fleet
         );
     }
 
-    /** Comptes actifs ayant un rôle Parc automobile donné. @return int[] */
+    /**
+     * Comptes actifs ayant un rôle Parc automobile donné. Le profil « fleet » de la
+     * plateforme compte comme gestionnaire et comme direction (validation des demandes).
+     * @return int[]
+     */
     public static function usersWithRole(string $fleetRole): array
     {
+        $profile = in_array($fleetRole, ['gestionnaire', 'direction'], true) ? " OR role = 'fleet'" : '';
         return array_map('intval', array_column(
-            Database::all('SELECT id FROM users WHERE active = 1 AND fleet_role = ?', [$fleetRole]), 'id'));
+            Database::all('SELECT id FROM users WHERE active = 1 AND (fleet_role = ?' . $profile . ')', [$fleetRole]), 'id'));
+    }
+
+    /**
+     * Types de véhicule (Parc automobile › Types de véhicule) : code → libellé.
+     * $withInactive : aussi les types retirés (affichage des véhicules et demandes existants).
+     *
+     * @return array<string, string>
+     */
+    public static function vehicleTypes(bool $withInactive = false): array
+    {
+        static $cache = [];
+        if (!isset($cache[$withInactive])) {
+            $cache[$withInactive] = [];
+            foreach (Database::all('SELECT code, label FROM fleet_vehicle_types' . ($withInactive ? '' : ' WHERE active = 1') . ' ORDER BY label') as $t) {
+                $cache[$withInactive][$t['code']] = $t['label'];
+            }
+        }
+        return $cache[$withInactive];
+    }
+
+    /** Libellé d'un type de véhicule (code inconnu : le code lui-même). */
+    public static function vehicleTypeLabel(?string $code, string $default = ''): string
+    {
+        return $code === null || $code === '' ? $default : (self::vehicleTypes(true)[$code] ?? $code);
+    }
+
+    /**
+     * Lieu de référence des missions « hors de … » pour un employé : sa province
+     * (assignée par les RH ou l'administrateur), sinon la ville des paramètres.
+     */
+    public static function homeArea(?int $employeeId, array $settings): string
+    {
+        $province = $employeeId !== null ? Database::value(
+            'SELECT p.name FROM employees e JOIN provinces p ON p.id = e.province_id WHERE e.id = ?', [$employeeId]) : null;
+        return $province ?: (string) ($settings['fleet_city'] ?? FleetWorkflow::DEFAULTS['fleet_city']);
     }
 
     /** Compte actif relié à une fiche employé, ou null. */

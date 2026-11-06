@@ -54,18 +54,13 @@ final class RequestController extends Controller
     {
         $employee = Auth::employeeId();
         $settings = Fleet::settings();
-        $n1 = null;
-        if ($employee !== null) {
-            $emp = Database::one('SELECT department_id FROM employees WHERE id = ?', [$employee]);
-            $head = FleetWorkflow::resolveN1($emp['department_id'] !== null ? (int) $emp['department_id'] : null, $employee, Departments::all());
-            $n1 = $head !== null ? Database::one('SELECT e.name, u.id user_id FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND u.active = 1 WHERE e.id = ?', [$head]) : null;
-        }
         $this->render('Fleet:request_form', [
             'title'    => 'Nouvelle demande de véhicule',
             'employee' => $employee,
             'drivers'  => Fleet::drivers(),
             'settings' => $settings,
-            'n1'       => $n1,
+            'area'     => Fleet::homeArea($employee, $settings),
+            'types'    => Fleet::vehicleTypes(),
         ]);
     }
 
@@ -100,7 +95,7 @@ final class RequestController extends Controller
             $req['return_at'] <= $req['depart_at'] => 'Le retour doit être après le départ.',
             FleetWorkflow::days($req['depart_at'], $req['return_at']) > FleetWorkflow::MAX_DAYS => 'Mission trop longue (' . FleetWorkflow::MAX_DAYS . ' jours au plus).',
             $req['passengers'] < 1 || $req['passengers'] > 60 => 'Nombre de passagers invalide.',
-            $req['vehicle_type'] !== null && !isset(FleetWorkflow::VEHICLE_TYPES[$req['vehicle_type']]) => 'Type de véhicule invalide.',
+            $req['vehicle_type'] !== null && !isset(Fleet::vehicleTypes()[$req['vehicle_type']]) => 'Type de véhicule invalide.',
             $req['preferred_driver_id'] !== null && !Database::value('SELECT id FROM fleet_drivers WHERE id = ? AND active = 1', [$req['preferred_driver_id']]) => 'Chauffeur introuvable.',
             $req['urgent'] === 1 && $req['urgent_reason'] === null => 'Indiquez la raison de l\'urgence.',
             default => null,
@@ -239,7 +234,7 @@ final class RequestController extends Controller
     /** Demandes à valider par l'utilisateur (N+1 ou direction), et ses dernières décisions. */
     public function validations(): void
     {
-        $direction = (Auth::user()['fleet_role'] ?? '') === 'direction';
+        $direction = Auth::isFleetDirection();
         $pending = $this->rows(
             "r.validation = 'en_attente' AND r.status NOT IN ('refusee','annulee')
              AND ((r.step = 'n1' AND r.n1_user_id = ?)" . ($direction ? " OR r.step = 'direction'" : '') . ')',
@@ -284,7 +279,7 @@ final class RequestController extends Controller
     /** Nombre de demandes en attente de la décision de l'utilisateur (menu, page Mes demandes). */
     private function pendingCount(): int
     {
-        $direction = (Auth::user()['fleet_role'] ?? '') === 'direction';
+        $direction = Auth::isFleetDirection();
         return (int) Database::value(
             "SELECT COUNT(*) FROM fleet_requests r WHERE r.validation = 'en_attente' AND r.status NOT IN ('refusee','annulee')
                AND ((r.step = 'n1' AND r.n1_user_id = ?)" . ($direction ? " OR r.step = 'direction'" : '') . ')',

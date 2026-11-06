@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Modules\Fleet\Services;
 
 use App\Core\Auth;
+use App\Core\Database;
 use App\Modules\Platform\Services\Notifications;
 
 /**
@@ -43,7 +44,8 @@ final class FleetNotify
     {
         $assigned = $req['status'] !== 'approuvee';
         self::send([self::requester($req)], 'demande_approuvee', 'Demande ' . $req['reference'] . ' approuvée',
-            $assigned ? 'Validation confirmée.' : 'Un véhicule va vous être affecté.', $req);
+            'Votre demande de véhicule a été approuvée (' . self::summary($req) . '). '
+                . ($assigned ? 'Validation confirmée.' : 'Un véhicule va vous être affecté : vous recevrez un message à l\'affectation.'), $req);
         if (!$assigned) {
             self::send(Fleet::usersWithRole('gestionnaire'), 'demande_a_affecter', 'Demande à affecter : ' . $req['reference'],
                 self::summary($req), $req, '/flotte/demandes/' . (int) $req['id'] . '/affecter');
@@ -113,6 +115,33 @@ final class FleetNotify
     {
         self::send(Fleet::usersWithRole('gestionnaire'), 'vehicule_panne', 'Véhicule en panne : ' . $req['plate'],
             'Signalé à la clôture de ' . $req['reference'] . ($notes !== '' ? ' : ' . $notes : '.'), $req, '/flotte/vehicules/' . (int) $req['vehicle_id']);
+    }
+
+    /**
+     * Véhicules attribués à un chauffeur (fiche chauffeur ou fiche véhicule) :
+     * cloche et e-mail de son compte, ou e-mail à l'adresse de sa fiche sans compte.
+     *
+     * @param int[] $vehicleIds véhicules nouvellement attribués
+     */
+    public static function vehiclesAssigned(int $driverId, array $vehicleIds): void
+    {
+        if (!$vehicleIds) {
+            return;
+        }
+        $driver = Database::one('SELECT dr.employee_id, e.name FROM fleet_drivers dr JOIN employees e ON e.id = dr.employee_id WHERE dr.id = ?', [$driverId]);
+        if ($driver === null) {
+            return;
+        }
+        $list = array_map(static fn(array $v) => $v['plate'] . ' (' . trim($v['brand'] . ' ' . $v['model']) . ')',
+            Database::all('SELECT plate, brand, model FROM fleet_vehicles WHERE id IN (' . implode(',', array_map('intval', $vehicleIds)) . ') ORDER BY plate'));
+        if (!$list) {
+            return;
+        }
+        Notifications::employee((int) $driver['employee_id'], 'vehicule_attribue',
+            count($list) > 1 ? 'Véhicules qui vous sont attribués' : 'Véhicule qui vous est attribué : ' . $list[0],
+            'Bonjour ' . $driver['name'] . ', le gestionnaire du parc vous a attribué : ' . implode(', ', $list)
+                . '. Vous pouvez désormais être affecté aux missions avec ' . (count($list) > 1 ? 'ces véhicules.' : 'ce véhicule.'),
+            '/flotte/missions', 'fleet');
     }
 
     /** « Jean Dupont · Matadi · lun. 20/10 08:00 → mar. 21/10 17:00 » */

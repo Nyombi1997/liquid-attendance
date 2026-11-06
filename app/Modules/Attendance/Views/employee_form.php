@@ -2,7 +2,12 @@
 /** Création ($emp = null) ou modification d'un employé. */
 $isNew = $emp === null;
 $emp ??= ['id' => 0, 'name' => '', 'job_title' => null, 'department_id' => null, 'matricule' => null,
-    'group_id' => null, 'email' => null, 'phone' => null, 'active' => 1];
+    'group_id' => null, 'province_id' => null, 'email' => null, 'phone' => null, 'active' => 1];
+// Province actuelle conservée même si elle a été retirée de la liste
+$provinceIds = array_map('intval', array_column($provinces, 'id'));
+if ($emp['province_id'] !== null && !in_array((int) $emp['province_id'], $provinceIds, true)) {
+    $provinces[] = ['id' => (int) $emp['province_id'], 'name' => (string) App\Core\Database::value('SELECT name FROM provinces WHERE id = ?', [$emp['province_id']])];
+}
 ?>
 <div class="page-head">
   <div>
@@ -38,6 +43,10 @@ $emp ??= ['id' => 0, 'name' => '', 'job_title' => null, 'department_id' => null,
       <label class="field"><span>Département</span>
         <select name="department_id"><option value="0">Aucun</option>
           <?php foreach ($departments as $d): ?><option value="<?= (int) $d['id'] ?>" <?= (int) old('department_id', $emp['department_id']) === $d['id'] ? 'selected' : '' ?>><?= str_repeat('&nbsp;&nbsp;&nbsp;', $d['depth']) . e($d['name']) ?></option><?php endforeach; ?>
+        </select></label>
+      <label class="field"><span>Province</span>
+        <select name="province_id"><option value="0">Aucune</option>
+          <?php foreach ($provinces as $p): ?><option value="<?= (int) $p['id'] ?>" <?= (int) old('province_id', $emp['province_id']) === (int) $p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option><?php endforeach; ?>
         </select></label>
       <label class="field"><span>Matricule</span><input name="matricule" value="<?= e(old('matricule', $emp['matricule'])) ?>" maxlength="40"></label>
       <label class="field"><span>Groupe</span>

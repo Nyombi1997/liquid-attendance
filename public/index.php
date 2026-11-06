@@ -32,6 +32,10 @@ $r->get('/departements', [P\DepartmentController::class, 'index'], 'manage');
 $r->post('/departements', [P\DepartmentController::class, 'store']);
 $r->post('/departements/{id}', [P\DepartmentController::class, 'update']);
 $r->post('/departements/{id}/supprimer', [P\DepartmentController::class, 'destroy']);
+$r->get('/provinces', [P\ProvinceController::class, 'index'], 'admin');
+$r->post('/provinces', [P\ProvinceController::class, 'store'], 'admin');
+$r->post('/provinces/{id}', [P\ProvinceController::class, 'update'], 'admin');
+$r->post('/provinces/{id}/supprimer', [P\ProvinceController::class, 'destroy'], 'admin');
 $r->get('/conges', [P\ModuleController::class, 'leave']);
 
 // Employés et groupes (liste commune à tous les modules)
@@ -43,6 +47,9 @@ $r->get('/employes/{id}/modifier', [A\EmployeeController::class, 'edit'], 'manag
 $r->post('/employes/{id}', [A\EmployeeController::class, 'update']);
 $r->post('/employes/groupe', [A\EmployeeController::class, 'bulkGroup']);
 $r->post('/employes/departement', [A\EmployeeController::class, 'bulkDepartment']);
+$r->post('/employes/province', [A\EmployeeController::class, 'bulkProvince'], 'province');
+$r->post('/employes/{id}/province', [A\EmployeeController::class, 'province'], 'province');
+$r->post('/employes/{id}/compte', [A\EmployeeController::class, 'account']);
 $r->get('/groupes', [A\GroupController::class, 'index']);
 $r->post('/groupes', [A\GroupController::class, 'store']);
 $r->post('/groupes/{id}', [A\GroupController::class, 'update']);
@@ -113,11 +120,15 @@ $r->get('/flotte/vehicules', [F\VehicleController::class, 'index'], 'fleet_board
 $r->post('/flotte/vehicules', [F\VehicleController::class, 'store'], 'fleet_manage');
 $r->get('/flotte/vehicules/{id}', [F\VehicleController::class, 'show'], 'fleet_board');
 $r->post('/flotte/vehicules/{id}', [F\VehicleController::class, 'update'], 'fleet_manage');
+$r->post('/flotte/vehicules/{id}/chauffeurs', [F\VehicleController::class, 'drivers'], 'fleet_manage');
 $r->post('/flotte/vehicules/{id}/documents', [F\VehicleController::class, 'storeDocument'], 'fleet_manage');
 $r->get('/flotte/documents/{id}', [F\VehicleController::class, 'document'], 'fleet_board');
 $r->get('/flotte/chauffeurs', [F\DriverController::class, 'index'], 'fleet_board');
 $r->post('/flotte/chauffeurs', [F\DriverController::class, 'store'], 'fleet_manage');
 $r->post('/flotte/chauffeurs/{id}', [F\DriverController::class, 'update'], 'fleet_manage');
+$r->get('/flotte/types', [F\VehicleTypeController::class, 'index'], 'fleet_manage');
+$r->post('/flotte/types', [F\VehicleTypeController::class, 'store'], 'fleet_manage');
+$r->post('/flotte/types/modifier', [F\VehicleTypeController::class, 'update'], 'fleet_manage');
 $r->get('/flotte/import', [F\ImportController::class, 'index'], 'fleet_manage');
 $r->get('/flotte/import/modele', [F\ImportController::class, 'template'], 'fleet_manage');
 $r->post('/flotte/import', [F\ImportController::class, 'upload'], 'fleet_manage');

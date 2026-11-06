@@ -30,9 +30,9 @@ function ask(string $prompt): string
     return $value;
 }
 
-$password = ask('Mot de passe (12 caractères minimum) : ');
-if (mb_strlen($password) < 12) {
-    fwrite(STDERR, "Mot de passe trop court.\n");
+$password = ask('Mot de passe (' . App\Core\Auth::passwordMinLength() . ' caractères minimum) : ');
+if ($error = App\Core\Auth::passwordError($password)) {
+    fwrite(STDERR, $error . "\n");
     exit(1);
 }
 if (ask('Confirmation : ') !== $password) {

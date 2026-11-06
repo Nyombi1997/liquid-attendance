@@ -9,7 +9,11 @@ declare(strict_types=1);
  *   2. alertes d'expiration (assurance, contrôle technique, permis) aux
  *      gestionnaires, fleet_doc_alert_days jours avant (30), une fois par document ;
  *   3. envoi des e-mails des notifications en attente (SMTP de .env ; sans SMTP,
- *      rien n'est envoyé). Trois essais au plus par e-mail.
+ *      rien n'est envoyé), adresse du compte ou, à défaut, de sa fiche employé ;
+ *   4. envoi des e-mails adressés directement à une adresse (mail_outbox :
+ *      bienvenue, disponibilité d'un employé sans compte, véhicule attribué…).
+ *   Trois essais au plus par e-mail. Toute la plateforme passe par ici : avec
+ *   FLEET_TASKS_INTERVAL=0, aucun e-mail n'est envoyé.
  *   docker compose exec worker php bin/fleet-tasks.php
  */
 
@@ -85,7 +89,7 @@ foreach (Database::all(
 
 // 3. E-mails en attente
 $pending = Database::all(
-    "SELECT n.id, n.title, n.body, n.url, n.email_attempts, e.email
+    "SELECT n.id, n.title, n.body, n.url, n.email_attempts, COALESCE(NULLIF(u.email, ''), NULLIF(e.email, '')) email
        FROM notifications n JOIN users u ON u.id = n.user_id LEFT JOIN employees e ON e.id = u.employee_id
       WHERE n.email_status = 'en_attente' ORDER BY n.id LIMIT 50"
 );
@@ -110,6 +114,26 @@ foreach ($pending as $n) {
             [$final ? 'echec' : 'en_attente', mb_substr($error, 0, 255), $n['id']]);
         $done['échecs']++;
         fwrite(STDERR, '[flotte] e-mail ' . $n['id'] . ' non envoyé : ' . $error . "\n");
+    }
+}
+
+// 4. E-mails adressés directement à une adresse
+$outbox = Database::all("SELECT id, to_email, subject, body, attempts FROM mail_outbox WHERE status = 'en_attente' ORDER BY id LIMIT 50");
+if ($outbox && !Mailer::configured()) {
+    Database::run("UPDATE mail_outbox SET status = 'echec', error = 'SMTP non configuré' WHERE status = 'en_attente'");
+    $outbox = [];
+}
+foreach ($outbox as $m) {
+    $error = $mailer->send($m['to_email'], $m['subject'],
+        rtrim($m['body']) . "\n\n— " . Config::get('app_name') . ' (message automatique, ne pas répondre)');
+    if ($error === null) {
+        Database::run("UPDATE mail_outbox SET status = 'envoye', sent_at = NOW(), error = NULL, attempts = attempts + 1 WHERE id = ?", [$m['id']]);
+        $done['e-mails']++;
+    } else {
+        Database::run('UPDATE mail_outbox SET status = ?, error = ?, attempts = attempts + 1 WHERE id = ?',
+            [(int) $m['attempts'] + 1 >= 3 ? 'echec' : 'en_attente', mb_substr($error, 0, 255), $m['id']]);
+        $done['échecs']++;
+        fwrite(STDERR, '[e-mails] message ' . $m['id'] . ' non envoyé : ' . $error . "\n");
     }
 }
 

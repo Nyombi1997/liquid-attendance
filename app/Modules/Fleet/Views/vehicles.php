@@ -26,21 +26,22 @@ use App\Modules\Fleet\Services\FleetWorkflow;
 <section class="card table-card">
   <div class="table-scroll">
   <table class="table">
-    <thead><tr><th>Immatriculation</th><th>Véhicule</th><th>Type</th><th>État</th><th>Assurance</th><th>Contrôle technique</th><th class="num">Kilométrage</th></tr></thead>
+    <thead><tr><th>Immatriculation</th><th>Véhicule</th><th>Type</th><th>Département</th><th>État</th><th>Assurance</th><th>Contrôle technique</th><th class="num">Kilométrage</th></tr></thead>
     <tbody>
     <?php foreach ($vehicles as $v): $d = $docs[(int) $v['id']] ?? []; ?>
       <tr>
         <td><a href="/flotte/vehicules/<?= (int) $v['id'] ?>"><strong class="plate"><?= e($v['plate']) ?></strong></a></td>
         <td><?= e($v['brand'] . ' ' . $v['model']) ?><?= $v['year'] ? ' <span class="muted">' . (int) $v['year'] . '</span>' : '' ?>
           <small class="block muted"><?= e(Fleet::FUEL_TYPES[$v['fuel_type']] ?? '') ?><?= $v['tracker_id'] ? ' · tracker ' . e($v['tracker_id']) : '' ?></small></td>
-        <td><?= e(FleetWorkflow::VEHICLE_TYPES[$v['vehicle_type']] ?? '') ?> <span class="muted">· <?= (int) $v['seats'] ?> pl.</span></td>
+        <td><?= e(Fleet::vehicleTypeLabel($v['vehicle_type'])) ?> <span class="muted">· <?= (int) $v['seats'] ?> pl.</span></td>
+        <td><?= $v['department_name'] ? e($v['department_name']) : '<span class="muted">Parc commun</span>' ?></td>
         <td><?= Fleet::vehicleBadge($v['status']) ?><?= $v['mission_ref'] ? ' <small class="muted">' . e($v['mission_ref']) . '</small>' : '' ?></td>
         <td><?= Fleet::expiryBadge($d['assurance'] ?? null, $alertDays) ?></td>
         <td><?= Fleet::expiryBadge($d['controle_technique'] ?? null, $alertDays) ?></td>
         <td class="num"><?= $v['odometer_km'] !== null ? e(number_format((int) $v['odometer_km'], 0, ',', ' ')) . ' km' : '—' ?></td>
       </tr>
     <?php endforeach; ?>
-    <?php if (!$vehicles): ?><tr><td colspan="7" class="muted center">Aucun véhicule<?= $status !== '' ? ' dans cet état' : '' ?>.</td></tr><?php endif; ?>
+    <?php if (!$vehicles): ?><tr><td colspan="8" class="muted center">Aucun véhicule<?= $status !== '' ? ' dans cet état' : '' ?>.</td></tr><?php endif; ?>
     </tbody>
   </table>
   </div>

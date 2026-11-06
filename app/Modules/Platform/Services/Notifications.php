@@ -9,8 +9,11 @@ use App\Core\Mailer;
 /**
  * Notifications adressées à un compte (table notifications) : affichées dans la
  * cloche de l'en-tête (/api/notifications) et envoyées par e-mail par le worker
- * (bin/fleet-tasks.php) quand le SMTP est configuré et que la fiche employé
- * reliée au compte a une adresse e-mail. Communes à tous les modules.
+ * (bin/fleet-tasks.php) quand le SMTP est configuré et que le compte a une
+ * adresse (users.email, sinon celle de la fiche employé reliée).
+ * E-mails à une simple adresse (employé sans compte) : mail(), file mail_outbox,
+ * envoyée par le même worker. Jamais d'envoi pendant une requête web.
+ * Communes à tous les modules.
  */
 final class Notifications
 {
@@ -19,19 +22,19 @@ final class Notifications
      * @param int|null $except compte à ne pas prévenir (celui qui fait l'action)
      */
     public static function send(array $userIds, string $kind, string $title, ?string $body = null, ?string $url = null,
-                                ?int $except = null, string $module = 'fleet'): void
+                                ?int $except = null, string $module = 'fleet', bool $email = true): void
     {
         $ids = array_values(array_unique(array_filter(array_map(static fn($id) => $id !== null ? (int) $id : 0, $userIds))));
         $ids = array_values(array_filter($ids, static fn(int $id) => $id !== $except));
         if (!$ids) {
             return;
         }
-        $mail = Mailer::configured();
         $emails = [];
-        if ($mail) {
+        if ($email && Mailer::configured()) {
             foreach (Database::all(
-                'SELECT u.id, e.email FROM users u JOIN employees e ON e.id = u.employee_id
-                  WHERE u.active = 1 AND e.email IS NOT NULL AND e.email <> \'\' AND u.id IN (' . implode(',', $ids) . ')'
+                'SELECT u.id FROM users u LEFT JOIN employees e ON e.id = u.employee_id
+                  WHERE u.active = 1 AND COALESCE(NULLIF(u.email, \'\'), NULLIF(e.email, \'\')) IS NOT NULL
+                    AND u.id IN (' . implode(',', $ids) . ')'
             ) as $r) {
                 $emails[(int) $r['id']] = true;
             }
@@ -43,6 +46,43 @@ final class Notifications
                  isset($emails[$id]) ? 'en_attente' : 'aucun', $id]
             );
         }
+    }
+
+    /**
+     * E-mail à une adresse (sans compte ni cloche), mis en file pour le worker.
+     * Sans SMTP configuré ou avec une adresse invalide : rien n'est fait.
+     */
+    public static function mail(?string $to, string $subject, string $body): bool
+    {
+        $to = trim((string) $to);
+        if (!Mailer::configured() || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+        Database::run('INSERT INTO mail_outbox (to_email, subject, body) VALUES (?, ?, ?)',
+            [mb_substr($to, 0, 150), mb_substr($subject, 0, 160), mb_substr($body, 0, 5000)]);
+        return true;
+    }
+
+    /**
+     * Prévient un employé : par son compte s'il en a un (cloche + e-mail), sinon
+     * par un e-mail à l'adresse de sa fiche. Renvoie vrai si un message est parti
+     * (cloche ou e-mail en file).
+     */
+    public static function employee(int $employeeId, string $kind, string $title, string $body, ?string $url = null,
+                                    string $module = 'presence'): bool
+    {
+        $emp = Database::one(
+            'SELECT e.email, u.id user_id FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND u.active = 1 WHERE e.id = ?',
+            [$employeeId]
+        );
+        if ($emp === null) {
+            return false;
+        }
+        if ($emp['user_id'] !== null) {
+            self::send([(int) $emp['user_id']], $kind, $title, $body, $url, null, $module);
+            return true;
+        }
+        return self::mail($emp['email'], $title, $title . "\n\n" . $body);
     }
 
     /** Dernières notifications d'un compte. */

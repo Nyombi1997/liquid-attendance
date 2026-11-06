@@ -23,7 +23,8 @@ $v = $vehicle;
   <section class="card">
     <h2>Fiche</h2>
     <dl class="facts facts-tight">
-      <dt>Type</dt><dd><?= e(FleetWorkflow::VEHICLE_TYPES[$v['vehicle_type']] ?? '') ?>, <?= (int) $v['seats'] ?> places</dd>
+      <dt>Type</dt><dd><?= e(Fleet::vehicleTypeLabel($v['vehicle_type'])) ?>, <?= (int) $v['seats'] ?> places</dd>
+      <dt>Département</dt><dd><?= $department ? e($department) : '<span class="muted">Parc commun</span>' ?></dd>
       <dt>Année</dt><dd><?= $v['year'] ? (int) $v['year'] : '—' ?></dd>
       <dt>Carburant</dt><dd><?= e(Fleet::FUEL_TYPES[$v['fuel_type']] ?? '') ?><?= $v['tank_liters'] !== null ? ', réservoir de ' . e(rtrim(rtrim((string) $v['tank_liters'], '0'), '.')) . ' L' : '' ?></dd>
       <dt>Consommation de référence</dt><dd><?= $v['ref_consumption'] !== null ? e(str_replace('.', ',', (string) (float) $v['ref_consumption'])) . ' L/100 km' : '—' ?></dd>
@@ -91,6 +92,28 @@ $v = $vehicle;
     </ul>
   </section>
 </div>
+
+<section class="card">
+  <div class="card-head"><h2><?= fa('fa-solid fa-id-card') ?> Chauffeurs attitrés</h2></div>
+  <?php $byId = array_column($drivers, null, 'id'); $names = array_map(static fn($id) => $byId[$id]['name'] ?? null, $assigned); ?>
+  <p><?= $assigned ? e(implode(', ', array_filter($names))) : '<span class="muted">Aucun chauffeur attitré.</span>' ?></p>
+  <?php if (can('fleet_manage')): ?>
+  <form method="post" action="/flotte/vehicules/<?= (int) $v['id'] ?>/chauffeurs" class="stack">
+    <?= csrf_field() ?>
+    <?php if ($drivers): ?>
+    <div class="check-grid">
+      <?php foreach ($drivers as $d): ?>
+        <label class="check"><input type="checkbox" name="driver_ids[]" value="<?= (int) $d['id'] ?>" <?= in_array((int) $d['id'], $assigned, true) ? 'checked' : '' ?>> <?= e($d['name']) ?></label>
+      <?php endforeach; ?>
+    </div>
+    <p class="muted small">Un chauffeur nouvellement attribué est prévenu (cloche et e-mail). Un chauffeur à qui un véhicule est attribué ne conduit plus que ses véhicules attribués.</p>
+    <div><button class="btn btn-primary btn-sm" type="submit">Enregistrer les chauffeurs</button></div>
+    <?php else: ?>
+    <p class="muted small">Aucun chauffeur : <a href="/flotte/chauffeurs">les ajouter</a>.</p>
+    <?php endif; ?>
+  </form>
+  <?php endif; ?>
+</section>
 
 <?php if (can('fleet_manage')): ?>
 <dialog id="edit-vehicle" class="dialog dialog-wide">

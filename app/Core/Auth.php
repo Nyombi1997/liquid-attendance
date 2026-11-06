@@ -13,6 +13,9 @@ use App\Modules\Platform\Services\Departments;
  *   manager : Agents, tableau de bord, présence du jour, Employés et Calendrier de son département uniquement
  *   lecteur : consultation uniquement
  *   employe : module Parc automobile seulement (demandes de véhicule, missions)
+ *   fleet   : profil Parc automobile : mêmes accès que les RH, plus la gestion du parc
+ *             (véhicules, types, chauffeurs, affectations) et la validation des demandes
+ *             (étape « direction », comme le rôle Parc automobile « direction »)
  * Les rubriques réservées au droit « view » (sorties manquantes, modules…) ne
  * s'affichent ni pour les RH ni pour les managers.
  *
@@ -24,6 +27,7 @@ use App\Modules\Platform\Services\Departments;
  *   view     : autres pages de consultation (corrections, accès, horaires, groupes, pointeuses…)
  *   status   : disponibilité des agents (statut de travail)
  *   export   : rapport Excel de la page Agents
+ *   province : province de rattachement d'un employé (RH, administrateur, profil fleet)
  *   manage   : toutes les autres modifications
  *   admin    : comptes, pointeuses, journal
  *   account  : profil, déconnexion, cloche des notifications (tous les comptes)
@@ -42,22 +46,23 @@ use App\Modules\Platform\Services\Departments;
 final class Auth
 {
     private const ABILITIES = [
-        'board'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
+        'board'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'fleet'],
         'presence' => ['admin', 'ceo', 'manager', 'lecteur'],
-        'staff'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur'],
-        'calendar' => ['admin', 'rh', 'manager'],
+        'staff'    => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'fleet'],
+        'calendar' => ['admin', 'rh', 'manager', 'fleet'],
         'view'     => ['admin', 'ceo', 'lecteur'],
-        'status'   => ['admin', 'rh'],
-        'export'   => ['admin', 'rh'],
+        'status'   => ['admin', 'rh', 'fleet'],
+        'export'   => ['admin', 'rh', 'fleet'],
+        'province' => ['admin', 'rh', 'fleet'],
         'manage'   => ['admin'],
         'admin'    => ['admin'],
-        'account'  => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe'],
+        'account'  => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe', 'fleet'],
         // Parc automobile
-        'fleet'          => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe'],
-        'fleet_validate' => ['fleet:validateur', 'fleet:direction'],
+        'fleet'          => ['admin', 'rh', 'ceo', 'manager', 'lecteur', 'employe', 'fleet'],
+        'fleet_validate' => ['fleet', 'fleet:validateur', 'fleet:direction'],
         'fleet_drive'    => ['fleet:chauffeur'],
-        'fleet_board'    => ['admin', 'ceo', 'fleet:gestionnaire', 'fleet:direction'],
-        'fleet_manage'   => ['admin', 'fleet:gestionnaire'],
+        'fleet_board'    => ['admin', 'ceo', 'fleet', 'fleet:gestionnaire', 'fleet:direction'],
+        'fleet_manage'   => ['admin', 'fleet', 'fleet:gestionnaire'],
     ];
 
     public const FLEET_ROLES = [
@@ -75,6 +80,7 @@ final class Auth
         'manager' => 'Manager de département',
         'lecteur' => 'Lecteur',
         'employe' => 'Employé (parc automobile)',
+        'fleet'   => 'Parc automobile (flotte)',
     ];
 
     /** @var int[]|null|false false = pas encore calculé */
@@ -163,9 +169,31 @@ final class Auth
     {
         return match (true) {
             self::role() === 'employe' => (self::user()['fleet_role'] ?? '') === 'chauffeur' ? '/flotte/missions' : '/flotte',
+            self::role() === 'fleet' => '/flotte',
             in_array(self::role(), ['manager', 'ceo'], true) => '/agents',
             default => '/',
         };
+    }
+
+    /** Valide l'étape « direction » des demandes de véhicule (rôle Parc automobile « direction » ou profil fleet) ? */
+    public static function isFleetDirection(): bool
+    {
+        return (self::user()['fleet_role'] ?? '') === 'direction' || self::role() === 'fleet';
+    }
+
+    /**
+     * Règle des mots de passe : longueur minimale (8 caractères). Renvoie le
+     * message d'erreur, ou null si le mot de passe convient.
+     */
+    public static function passwordError(string $password): ?string
+    {
+        $min = self::passwordMinLength();
+        return mb_strlen($password) < $min ? 'Le mot de passe doit contenir au moins ' . $min . ' caractères.' : null;
+    }
+
+    public static function passwordMinLength(): int
+    {
+        return max(8, (int) Config::get('password_min_length', 8));
     }
 
     /** Identifiant insensible à la casse : toujours enregistré et comparé en minuscules. */

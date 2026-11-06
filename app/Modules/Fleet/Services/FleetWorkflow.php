@@ -16,7 +16,10 @@ use DomainException;
  *
  * N+1 d'abord, puis direction si la mission est hors ville, dure plus de
  * fleet_direction_max_days jours ou touche un week-end (seuils dans settings).
- * Sans N+1 désigné, la demande va directement à la direction.
+ * Sans N+1 désigné, la demande va directement à la direction (rôle Parc
+ * automobile « direction » ou profil « fleet » de la plateforme).
+ * « Hors ville » : hors de la province de rattachement du demandeur (à défaut,
+ * la ville des paramètres) ; types de véhicule : table fleet_vehicle_types.
  * Demande urgente : le gestionnaire peut affecter avant la fin de la validation ;
  * la validation se fait alors a posteriori, et un refus a posteriori libère le
  * véhicule si la mission n'a pas commencé.
@@ -45,11 +48,6 @@ final class FleetWorkflow
     ];
 
     public const STEPS = ['n1' => 'Validation du N+1', 'direction' => 'Validation de la direction'];
-
-    public const VEHICLE_TYPES = [
-        'berline' => 'Berline', 'suv' => '4x4 / SUV', 'pickup' => 'Pick-up',
-        'minibus' => 'Minibus', 'camion' => 'Camion', 'moto' => 'Moto',
-    ];
 
     /** Durée maximale d'une demande (jours). */
     public const MAX_DAYS = 31;

@@ -110,6 +110,82 @@
     wrap.appendChild(btn);
   });
 
+  // Nouveau mot de passe (data-password-meter) : jauge de solidité et critères
+  // cochés au fil de la saisie. Seule la longueur minimale (attribut minlength,
+  // 8) est exigée par le serveur ; les autres critères sont des conseils.
+  // Confirmation (data-password-confirm="<name du champ>") : concordance affichée.
+  $$('input[data-password-meter]').forEach((input) => {
+    const min = parseInt(input.getAttribute('minlength'), 10) || 8;
+    const rules = [
+      [`Au moins ${min} caractères (obligatoire)`, (v) => v.length >= min],
+      ['Une lettre minuscule et une majuscule', (v) => /[a-z]/.test(v) && /[A-Z]/.test(v)],
+      ['Au moins un chiffre', (v) => /\d/.test(v)],
+      ['Au moins un caractère spécial (! ? @ # …)', (v) => /[^A-Za-z0-9]/.test(v)],
+      ['12 caractères ou plus', (v) => v.length >= 12],
+    ];
+    const levels = [
+      ['Trop court', 'weak'], ['Faible', 'weak'], ['Moyen', 'fair'], ['Bon', 'good'], ['Excellent', 'strong'],
+    ];
+    const box = document.createElement('div');
+    box.className = 'pw-meter';
+    box.hidden = true;
+    const bar = document.createElement('div');
+    bar.className = 'pw-bar';
+    const segments = [0, 1, 2, 3].map(() => bar.appendChild(document.createElement('span')));
+    const label = document.createElement('p');
+    label.className = 'pw-label';
+    label.setAttribute('aria-live', 'polite');
+    const list = document.createElement('ul');
+    list.className = 'pw-rules';
+    const items = rules.map(([text]) => {
+      const li = document.createElement('li');
+      li.append(faIcon('fa-regular fa-circle'), document.createTextNode(' ' + text));
+      list.appendChild(li);
+      return li;
+    });
+    box.append(bar, label, list);
+    (input.closest('.password-wrap') || input).after(box);
+
+    const update = () => {
+      const v = input.value;
+      box.hidden = v === '';
+      const ok = rules.map(([, test]) => test(v));
+      ok.forEach((pass, i) => {
+        items[i].classList.toggle('is-ok', pass);
+        items[i].querySelector('i').className = pass ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
+      });
+      // Score : 0 si trop court, sinon 1 + critères facultatifs remplis (plafonné à 4)
+      const score = !ok[0] ? 0 : Math.max(1, Math.min(4, 1 + ok.slice(1).filter(Boolean).length - (v.length < 10 ? 1 : 0)));
+      const [text, level] = levels[score];
+      box.dataset.level = level;
+      segments.forEach((s, i) => s.classList.toggle('is-on', i < Math.max(1, score)));
+      label.textContent = 'Solidité : ' + text;
+      input.setCustomValidity(v !== '' && !ok[0] ? `Le mot de passe doit contenir au moins ${min} caractères.` : '');
+    };
+    input.addEventListener('input', update);
+    update();
+  });
+
+  $$('input[data-password-confirm]').forEach((input) => {
+    const source = input.form?.querySelector(`input[name="${input.dataset.passwordConfirm}"]`);
+    if (!source) return;
+    const msg = document.createElement('p');
+    msg.className = 'pw-match';
+    msg.setAttribute('aria-live', 'polite');
+    msg.hidden = true;
+    (input.closest('.password-wrap') || input).after(msg);
+    const update = () => {
+      const same = input.value === source.value;
+      msg.hidden = input.value === '';
+      msg.classList.toggle('is-ok', same);
+      msg.replaceChildren(faIcon(same ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'),
+        document.createTextNode(same ? ' Les deux saisies correspondent' : ' Les deux saisies ne correspondent pas'));
+      input.setCustomValidity(input.value !== '' && !same ? 'Les deux saisies ne correspondent pas.' : '');
+    };
+    input.addEventListener('input', update);
+    source.addEventListener('input', update);
+  });
+
   // Barres de recherche : propositions dès la première lettre.
   //   data-suggest="go"     : ouvre la fiche de l'agent choisi
   //   data-suggest="submit" : met son nom dans le champ et envoie le filtre

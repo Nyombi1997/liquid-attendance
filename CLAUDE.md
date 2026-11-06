@@ -97,15 +97,16 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 | Droit | Rôles | Exemples de routes |
 |---|---|---|
 | `null` | public | `/connexion` |
-| `board` | admin, rh, ceo, manager, lecteur | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/notifications`, `/api/suggestions`, `/pointages`, `/profil` |
+| `board` | admin, rh, ceo, manager, lecteur, fleet | `/`, `/agents`, `/agents/{id}/photo`, `/api/direct`, `/api/notifications`, `/api/suggestions`, `/pointages`, `/profil` |
 | `presence` | admin, ceo, manager, lecteur | `/presence` |
-| `staff` | admin, rh, ceo, manager, lecteur | `/employes`, `/employes/{id}` (consultation ; manager : son département) |
-| `calendar` | admin, rh, manager | `/calendrier` |
+| `staff` | admin, rh, ceo, manager, lecteur, fleet | `/employes`, `/employes/{id}` (consultation ; manager : son département) |
+| `calendar` | admin, rh, manager, fleet | `/calendrier` |
 | `view` | admin, ceo, lecteur | `/groupes`, `/corrections`, `/acces`, `/horaires`, `/pointeuses`, `/presence/export`, `/flotte`, `/conges` |
-| `status` | admin, rh | POST `/agents/{id}/statut` (disponibilité) |
-| `export` | admin, rh | `/agents/export` (rapport Excel de la page Agents) |
+| `status` | admin, rh, fleet | POST `/agents/{id}/statut` (disponibilité) |
+| `export` | admin, rh, fleet | `/agents/export` (rapport Excel de la page Agents) |
 | `manage` | admin | POST employés, groupes, horaires, corrections, `/agents/{id}`, `/departements` |
-| `admin` | admin | `/utilisateurs`, `/journal`, `/etat-du-service`, POST `/pointeuses`, `/flotte/parametres` |
+| `admin` | admin | `/utilisateurs`, `/journal`, `/etat-du-service`, `/provinces`, POST `/pointeuses`, `/flotte/parametres` |
+| `province` | admin, rh, fleet | POST `/employes/{id}/province`, `/employes/province` (province de rattachement) |
 | `account` | tous, `employe` compris | `/applications`, `/profil`, `/deconnexion`, `/api/notifications` (+ POST `/api/notifications/lu`) |
 
 **Parc automobile** : droits donnés par le rôle de la plateforme **ou** par `users.fleet_role` (noté `fleet:…` dans `Auth::ABILITIES`) :
@@ -113,11 +114,14 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 | Droit | Qui | Exemples de routes |
 |---|---|---|
 | `fleet` | tous les comptes | `/flotte` (redirige selon le rôle), `/flotte/demandes…`, `/flotte/validations`, `/flotte/missions…` (droits fins dans le contrôleur : `Fleet::access()`) |
-| `fleet_validate` | fleet:validateur, fleet:direction, tout responsable (N+1) d'un département | entrée de menu « À valider » |
+| `fleet_validate` | fleet, fleet:validateur, fleet:direction, tout responsable (N+1) d'un département | entrée de menu « À valider » |
 | `fleet_drive` | fleet:chauffeur | entrée de menu « Mes missions » |
-| `fleet_board` | admin, ceo, fleet:gestionnaire, fleet:direction | tableau de bord `/flotte`, `/flotte/registre`, `/flotte/planning`, `/flotte/vehicules`, `/flotte/chauffeurs` |
-| `fleet_manage` | admin, fleet:gestionnaire | `/flotte/demandes/{id}/affecter`, POST véhicules, documents, chauffeurs, import CSV `/flotte/import…` (organisation comprise) |
+| `fleet_board` | admin, ceo, fleet, fleet:gestionnaire, fleet:direction | tableau de bord `/flotte`, `/flotte/registre`, `/flotte/planning`, `/flotte/vehicules`, `/flotte/chauffeurs` |
+| `fleet_manage` | admin, fleet, fleet:gestionnaire | `/flotte/demandes/{id}/affecter`, POST véhicules (département, chauffeurs attitrés `/flotte/vehicules/{id}/chauffeurs`), documents, chauffeurs, types `/flotte/types`, import CSV `/flotte/import…` (organisation comprise) |
 
+- `fleet` (« Parc automobile (flotte) ») : rôle de la plateforme = droits des RH + `fleet_board`, `fleet_manage`, `fleet_validate` ; valide l'étape « direction » (`Auth::isFleetDirection()`, `Fleet::usersWithRole('direction'|'gestionnaire')` l'inclut). Accueil `/flotte`.
+- Mots de passe : `Auth::passwordError()` (8 caractères minimum, `password_min_length`) ; champs `data-password-meter` (jauge et critères, app.js) et `data-password-confirm="<name>"`.
+- E-mails : `users.email` (sinon e-mail de la fiche) ; `Notifications::employee()` (compte : cloche + e-mail ; sans compte : `Notifications::mail()` → table `mail_outbox`), envoyés par `bin/fleet-tasks.php`. Bienvenue à la création d'un compte (sans mot de passe), disponibilité changée (`AgentController::status`), véhicule attribué à un chauffeur (`FleetNotify::vehiclesAssigned`).
 - `employe` : rôle de base du module Parc automobile seulement (demandeurs, chauffeurs) ; compte relié obligatoirement à une fiche (`users.employee_id`). Accueil : `/flotte` (chauffeur : `/flotte/missions`).
 - `ceo` : tout voir (sauf le calendrier), ne rien modifier. `manager` : uniquement son département (`users.department_id`) et ses sous-départements : Agents, tableau de bord, présence du jour, Calendrier, Employés en lecture. `rh` : tableau de bord, Agents (disponibilité seulement), Calendrier, Employés en lecture. RH et managers : aucune rubrique `view` (sorties manquantes, modules…), et « sortie manquante » s'affiche « Présent »/« Retard » (`status_info()`).
 - Identifiants insensibles à la casse : `Auth::normalizeUsername()` (minuscules) à l'enregistrement et à la connexion.
@@ -133,7 +137,9 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 
 | Table | Rôle |
 |---|---|
-| `users`, `login_attempts`, `audit_log` | comptes (rôle, département du manager, fiche employé `employee_id`, rôle Parc automobile `fleet_role`), anti-force brute, journal |
+| `users`, `login_attempts`, `audit_log` | comptes (rôle, `email`, département du manager, fiche employé `employee_id`, rôle Parc automobile `fleet_role`), anti-force brute, journal |
+| `provinces` | provinces (admin) ; `employees.province_id` = province de rattachement (« Mission hors de … ») |
+| `mail_outbox` | e-mails à une simple adresse (employé sans compte), envoyés par le worker |
 | `departments` | arborescence (parent_id), direction ou service (`kind`), responsable N+1 (`head_employee_id`), commune à tous les modules |
 | `notifications` | messages d'un compte (cloche) et état de l'e-mail (`email_status` : aucun, en_attente, envoye, echec) |
 | `employee_groups` | groupes d'agents (horaires) |
@@ -144,7 +150,8 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 | `schedules`, `schedule_assignments` | horaires et attributions (agent > groupe > défaut, sur période) |
 | `attendance_days` | une ligne par agent et par jour (arrivée, départ, retard, heures sup, statut, correction de sortie) |
 | `settings` | réglages (`history_start_date`, paramètres du parc `fleet_*`) et état du service écrit par le worker (`worker_heartbeat_at`, `worker_started_at`, `compute_last_at`, `backup_last_*`) |
-| `fleet_vehicles`, `fleet_vehicle_documents` | véhicules (état, tracker_id, ref_consumption pour les modules 2 et 4), documents (assurance, contrôle technique ; le plus récent de chaque type fait foi) |
+| `fleet_vehicle_types` | types de véhicule (code, libellé, actif), gérés dans `/flotte/types` |
+| `fleet_vehicles`, `fleet_vehicle_documents` | véhicules (type = code de `fleet_vehicle_types`, `department_id` attribué, état, tracker_id, ref_consumption pour les modules 2 et 4), documents (assurance, contrôle technique ; le plus récent de chaque type fait foi) |
 | `fleet_drivers`, `fleet_driver_vehicles` | chauffeurs (permis), véhicules autorisés (aucun : tous) |
 | `fleet_requests` | demandes : `status` (en_validation, approuvee, affectee, en_cours, terminee, refusee, annulee), `validation` (en_attente, approuvee, refusee), `step` (n1, direction), affectation, urgence |
 | `fleet_request_events`, `fleet_missions`, `fleet_ratings` | historique de chaque demande, démarrage et clôture (km, carburant, photo, état, `*_client_id` des saisies hors réseau), évaluations |
@@ -155,7 +162,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 
 **Services (Fleet)** : `FleetWorkflow` (circuit pur, testé : seuils de la direction, N+1, refus, urgence, clôture), `Availability` (conflits et indisponibilités, pur, testé), `FleetImport` (import CSV pur, testé : encodage et séparateur détectés, dates JJ/MM/AAAA ou AAAA-MM-JJ, employé par nom ou n° de pointeuse, plan par ligne ; appliqué par `ImportController` en transaction après nouvelle analyse sous verrou et comparaison de l'empreinte de l'aperçu), `Timeline` (positions de la frise), `Fleet` (données, réservations, droits sur une demande `access()`, historique `event()`), `FleetNotify` (destinataires de chaque étape), `FleetFiles` (fichiers hors de public/), `FleetStats` (tableau de bord).
 
-**Règles du circuit (FleetWorkflow)** : N+1 = responsable du service du demandeur (en remontant l'arbre si le demandeur est lui-même responsable ou si personne n'est désigné) ; direction en plus si hors ville, plus de `fleet_direction_max_days` jours (2) ou week-end ; sans N+1 avec compte : direction directement ; refus avec motif obligatoire ; personne ne valide sa propre demande ; urgence : affectation possible avant validation (`assigned_before_validation`), validation a posteriori ; un refus avant le départ libère le véhicule. Affectation en transaction avec `SELECT … FOR UPDATE` (demande, véhicule, chauffeur) et contrôles refaits sous verrou.
+**Règles du circuit (FleetWorkflow)** : N+1 = responsable du service du demandeur (en remontant l'arbre si le demandeur est lui-même responsable ou si personne n'est désigné) ; direction en plus si hors de la province du demandeur (`Fleet::homeArea()` : province de la fiche, sinon `fleet_city`), plus de `fleet_direction_max_days` jours (2) ou week-end ; sans N+1 avec compte : direction directement ; refus avec motif obligatoire ; personne ne valide sa propre demande ; urgence : affectation possible avant validation (`assigned_before_validation`), validation a posteriori ; un refus avant le départ libère le véhicule. Affectation en transaction avec `SELECT … FOR UPDATE` (demande, véhicule, chauffeur) et contrôles refaits sous verrou.
 
 **Worker** (`worker/sync.py`) : un thread par pointeuse active, connexion permanente ; synchro complète au démarrage puis toutes les `FULL_SYNC_INTERVAL` s (1800) ; badges en direct (`live_capture`) insérés dans `punches` ; recalcul de l'agent via `php bin/compute.php --employee-device-id=…` (au plus toutes les 5 s) ; calcul global des `COMPUTE_DAYS` (7) derniers jours toutes les `SYNC_INTERVAL` s (300) ; reconnexion 10 s → 30 s → 60 s → 5 min, puis toutes les `FAILED_RETRY_DELAY` s (1800) après `MAX_FAILURES` (5) échecs de suite ; F16 (`SLOW_DEVICES` = 10.0.4.4, 10.0.4.5) : délai `SLOW_TIMEOUT` (60 s) et `verbose` de pyzk ; remise à l'heure des horloges au démarrage si l'écart dépasse `CLOCK_MAX_DRIFT` (30 s) puis à `CLOCK_SET_AT` (03:00), seule écriture sur les appareils (écart avant/après dans `audit_log`) ; battement de cœur `settings.worker_heartbeat_at` toutes les 60 s ; thread « sauvegarde » : `mariadb-dump` compressé dans `/backups` (= `./data/backups`) à `BACKUP_AT` (02:00), `BACKUP_KEEP_DAYS` (14) jours gardés, à la main : `python3 worker/sync.py --sauvegarde` ; thread « parc-automobile » : `php bin/fleet-tasks.php` toutes les `FLEET_TASKS_INTERVAL` s (60 ; 0 = désactivé). Arrêt propre sur SIGTERM.
 
@@ -200,7 +207,7 @@ tests/                       DayCalculatorTest.php, CalendarTest.php, FleetWorkf
 
 Commande de migration (sur la VM, depuis ~/liquid-attendance) :
 `sudo docker compose exec -T db sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" liquid_attendance' < database/migrations/NNN_nom.sql`
-Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`), `005_flotte.sql` (parc automobile : organisation, rôles, véhicules, chauffeurs, demandes, missions, notifications). Toutes rejouables sans risque.
+Migrations existantes : `001_live.sql` (mode direct), `002_agents.sql` (départements, rôles ceo/manager, fiche et statut des agents), `003_identifiants.sql` (identifiants en minuscules, insensibles à la casse), `004_calendrier.sql` (table `work_statuses`), `005_flotte.sql` (parc automobile : organisation, rôles, véhicules, chauffeurs, demandes, missions, notifications), `006_comptes_provinces.sql` (e-mail des comptes, rôle `fleet`, provinces, types de véhicule, département des véhicules, `mail_outbox`). Toutes rejouables sans risque.
 Données d'exemple du parc : `database/seed_fleet_demo.sql` (comptes `grace.mbuyi`, `sarah.ilunga`, `jean.mukendi`, `patrick.lunda`, `didier.kasongo`…, mot de passe `demo-flotte-2026`) — base de test uniquement.
 
 # 8. État et questions ouvertes
@@ -220,6 +227,7 @@ D'après docs/CADRAGE.md (état au 22 oct. 2026) :
 - 22 oct. 2026 (suite) : **import CSV du parc automobile** (`/flotte/import`, droit `fleet_manage`) : organisation (direction ; service ; N+1), véhicules (avec échéances assurance et contrôle technique), chauffeurs ; modèle téléchargeable, aperçu (créations, mises à jour, erreurs ligne par ligne), rien d'enregistré avant confirmation, transaction + `Audit::log('import_…')`. Aucune migration.
 - 3 nov. 2026 : **organisation en applications à la manière d'Odoo** : accueil `/applications` (grille), barre du haut avec les menus de l'application en cours (menus déroulants), menu du compte ; menu latéral supprimé. Aucune migration.
 - 3 nov. 2026 (suite) : **création d'un agent** par l'administrateur (`/employes/nouveau`, droit `manage`, boutons sur Employés et Agents) ; n° de pointeuse obligatoire et unique, relié aux badges à la synchronisation. Aucune migration.
+- 6 nov. 2026 : **comptes, provinces et parc automobile (suite)** (migration `006_comptes_provinces.sql`) : mots de passe à 8 caractères avec jauge de solidité ; e-mail du compte et e-mail de bienvenue ; e-mail à l'agent quand sa disponibilité change (congé…) ; compte existant relié à une fiche depuis la fiche employé ; provinces (admin) assignées par RH/admin/fleet, « Mission hors de <province> », texte du circuit retiré du formulaire de demande ; types de véhicule gérés ; profil `fleet` (accès RH + gestion du parc + validation) ; véhicules attribués aux chauffeurs (e-mail) et aux départements ; e-mail d'approbation au demandeur ; `.env` : noms `MAIL_FROM`, `MAIL_NAME`, `SMTP_PASS` et `SMTP_SECURE=true` acceptés.
 - Questions ouvertes : sous-réseau de la DMZ (VLAN 3604) à fournir par la sécurité ; horaires réels et groupes à saisir ; parc automobile : nombre de véhicules et de sites, trackers GPS, serveur SMTP à fournir, anglais de l'interface ; historique antérieur à 2026 (`history_start_date`) ; logo officiel à fournir.
 
 **Règle** : quand une tâche change l'infrastructure, les ports, le schéma ou l'état d'avancement, mettre à jour CLAUDE.md et docs/CADRAGE.md dans le même commit.

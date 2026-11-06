@@ -14,6 +14,8 @@ use App\Modules\Platform\Services\Departments;
 
 /**
  * Liste et fiche des employés (droit « staff »), création et modification (« manage »).
+ * Province de rattachement : droit « province » (RH, profil Parc automobile, administrateur).
+ * Compte utilisateur relié à la fiche : administrateur (« manage »).
  * Managers : uniquement les agents de leur département (Auth::departmentScope()).
  */
 final class EmployeeController extends Controller
@@ -41,10 +43,11 @@ final class EmployeeController extends Controller
         }
 
         $employees = Database::all(
-            'SELECT e.*, g.name group_name, dp.name department_name,
+            'SELECT e.*, g.name group_name, dp.name department_name, pr.name province_name,
                     (SELECT MAX(punched_at) FROM punches p WHERE p.device_user_id = e.device_user_id) last_punch
                FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id
                LEFT JOIN departments dp ON dp.id = e.department_id
+               LEFT JOIN provinces pr ON pr.id = e.province_id
               WHERE ' . implode(' AND ', $where) . ' ORDER BY e.name',
             $params
         );
@@ -54,6 +57,7 @@ final class EmployeeController extends Controller
             'employees' => $employees,
             'groups'    => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
             'departments' => Departments::tree(),
+            'provinces' => self::provinces(),
             'q'         => $q,
             'group'     => $group,
             'state'     => $state,
@@ -105,7 +109,8 @@ final class EmployeeController extends Controller
     public function show(int $id): void
     {
         $emp = Database::one(
-            'SELECT e.*, g.name group_name FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id WHERE e.id = ?'
+            'SELECT e.*, g.name group_name, pr.name province_name FROM employees e LEFT JOIN employee_groups g ON g.id = e.group_id
+               LEFT JOIN provinces pr ON pr.id = e.province_id WHERE e.id = ?'
                 . Departments::sql(Auth::departmentScope()),
             [$id]
         ) ?? $this->notFound();
@@ -148,7 +153,94 @@ final class EmployeeController extends Controller
             'stats'    => $stats,
             'schedule' => $schedule,
             'access'   => $access,
+            'provinces'=> can('province') ? self::provinces() : [],
+            // Compte relié à la fiche, et comptes libres que l'administrateur peut relier
+            'account'  => can('manage') ? Database::one('SELECT id, username, full_name, role, active FROM users WHERE employee_id = ?', [$id]) : null,
+            'freeAccounts' => can('manage') ? Database::all('SELECT id, username, full_name, role FROM users WHERE employee_id IS NULL ORDER BY full_name') : [],
         ]);
+    }
+
+    /** Provinces actives (assignation). */
+    private static function provinces(): array
+    {
+        return Database::all('SELECT id, name FROM provinces WHERE active = 1 ORDER BY name');
+    }
+
+    /** Province de rattachement d'un employé (fiche employé). */
+    public function province(int $id): void
+    {
+        $emp = Database::one('SELECT id, name, province_id FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
+        $province = $this->provinceInput();
+        Database::run('UPDATE employees SET province_id = ? WHERE id = ?', [$province, $id]);
+        Audit::log('employe_province', ['id' => $id, 'avant' => $emp['province_id'], 'province' => $province]);
+        flash('success', $emp['name'] . ($province ? ' : province « ' . Database::value('SELECT name FROM provinces WHERE id = ?', [$province]) . ' ».' : ' : sans province.'));
+        $this->redirect("/employes/$id");
+    }
+
+    /** Province de plusieurs employés en une fois (liste des employés). */
+    public function bulkProvince(): void
+    {
+        $ids = array_values(array_filter(array_map('intval', (array) ($_POST['ids'] ?? []))));
+        $province = $this->provinceInput();
+        if (!$ids) {
+            flash('error', 'Aucun employé sélectionné.');
+            $this->back();
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        Database::run("UPDATE employees SET province_id = ? WHERE id IN ($in)", array_merge([$province], $ids));
+        Audit::log('employes_province', ['province' => $province, 'employes' => $ids]);
+        flash('success', count($ids) . ' employé(s) mis à jour.');
+        $this->back();
+    }
+
+    private function provinceInput(): ?int
+    {
+        $province = (int) $this->input('province_id', 0) ?: null;
+        if ($province !== null && !Database::value('SELECT id FROM provinces WHERE id = ? AND active = 1', [$province])) {
+            flash('error', 'Province introuvable.');
+            $this->back();
+        }
+        return $province;
+    }
+
+    /**
+     * Relie un compte utilisateur existant à la fiche (ou détache le compte relié).
+     * Un compte ne peut être relié qu'à une fiche, et une fiche qu'à un compte.
+     * Un compte « employé », chauffeur ou validateur ne peut pas être détaché :
+     * il lui faut une fiche (le relier d'abord à une autre depuis Utilisateurs).
+     */
+    public function account(int $id): void
+    {
+        $emp = Database::one('SELECT id, name FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
+        $current = Database::one('SELECT id, username, role, fleet_role FROM users WHERE employee_id = ?', [$id]);
+        if (isset($_POST['detach'])) {
+            if ($current === null) {
+                $this->redirect("/employes/$id");
+            }
+            if ($current['role'] === 'employe' || in_array($current['fleet_role'], ['chauffeur', 'validateur'], true)) {
+                flash('error', 'Le compte « ' . $current['username'] . ' » doit rester relié à une fiche (compte employé, chauffeur ou validateur).');
+                $this->redirect("/employes/$id");
+            }
+            Database::run('UPDATE users SET employee_id = NULL WHERE id = ?', [$current['id']]);
+            Audit::log('compte_detache', ['employe' => $id, 'compte' => $current['id']]);
+            flash('success', 'Compte « ' . $current['username'] . ' » détaché de la fiche.');
+            $this->redirect("/employes/$id");
+        }
+        $user = Database::one('SELECT id, username, employee_id FROM users WHERE id = ?', [(int) $this->input('user_id', 0)]);
+        $error = match (true) {
+            $user === null => 'Choisissez un compte.',
+            $current !== null => 'Cette fiche est déjà reliée au compte « ' . $current['username'] . ' » : détachez-le d\'abord.',
+            $user['employee_id'] !== null => 'Le compte « ' . $user['username'] . ' » est déjà relié à une autre fiche.',
+            default => null,
+        };
+        if ($error) {
+            flash('error', $error);
+            $this->redirect("/employes/$id");
+        }
+        Database::run('UPDATE users SET employee_id = ? WHERE id = ? AND employee_id IS NULL', [$id, $user['id']]);
+        Audit::log('compte_relie', ['employe' => $id, 'compte' => $user['id'], 'identifiant' => $user['username']]);
+        flash('success', 'Compte « ' . $user['username'] . ' » relié à la fiche de ' . $emp['name'] . '.');
+        $this->redirect("/employes/$id");
     }
 
     public function edit(int $id): void
@@ -160,6 +252,7 @@ final class EmployeeController extends Controller
             'emp'    => $emp,
             'groups' => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
             'departments' => Departments::tree(),
+            'provinces' => self::provinces(),
         ]);
     }
 
@@ -172,6 +265,7 @@ final class EmployeeController extends Controller
             'emp'    => null,
             'groups' => Database::all('SELECT id, name FROM employee_groups ORDER BY name'),
             'departments' => Departments::tree(),
+            'provinces' => self::provinces(),
         ]);
     }
 
@@ -197,10 +291,10 @@ final class EmployeeController extends Controller
         }
 
         $id = Database::insert(
-            'INSERT INTO employees (device_user_id, name, job_title, matricule, email, phone, group_id, department_id, active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO employees (device_user_id, name, job_title, matricule, email, phone, group_id, department_id, province_id, active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$deviceId, $data['name'], $data['job_title'], $data['matricule'], $data['email'], $data['phone'],
-                $data['group_id'], $data['department_id'], $data['active']]
+                $data['group_id'], $data['department_id'], $data['province_id'], $data['active']]
         );
         [$photoChange] = AgentPhoto::fromForm(Database::one('SELECT * FROM employees WHERE id = ?', [$id]));
         Audit::log('employe_cree', array_filter(['id' => $id, 'nom' => $data['name'], 'pointeuse' => $deviceId,
@@ -226,10 +320,11 @@ final class EmployeeController extends Controller
         }
 
         Database::run(
-            'UPDATE employees SET name = ?, job_title = ?, matricule = ?, email = ?, phone = ?, group_id = ?, department_id = ?, active = ?
+            'UPDATE employees SET name = ?, job_title = ?, matricule = ?, email = ?, phone = ?, group_id = ?, department_id = ?,
+                    province_id = ?, active = ?
               WHERE id = ?',
             [$data['name'], $data['job_title'], $data['matricule'], $data['email'], $data['phone'], $data['group_id'],
-                $data['department_id'], $data['active'], $id]
+                $data['department_id'], $data['province_id'], $data['active'], $id]
         );
         [$photoChange] = AgentPhoto::fromForm($emp);
         Audit::log('employe_modifie', array_filter(['id' => $id, 'avant' => $emp['name'], 'apres' => $data['name'],
@@ -254,8 +349,12 @@ final class EmployeeController extends Controller
             'email'     => mb_substr((string) $this->input('email', ''), 0, 150) ?: null,
             'phone'     => mb_substr((string) $this->input('phone', ''), 0, 40) ?: null,
             'group_id'  => (int) $this->input('group_id', 0) ?: null,
+            'province_id' => (int) $this->input('province_id', 0) ?: null,
             'active'    => isset($_POST['active']) ? 1 : 0,
         ];
+        if ($data['province_id'] !== null && Database::value('SELECT 1 FROM provinces WHERE id = ?', [$data['province_id']]) === null) {
+            $data['province_id'] = null;
+        }
         if ($data['department_id'] !== null && !isset(Departments::all()[$data['department_id']])) {
             $data['department_id'] = null;
         }

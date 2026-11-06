@@ -13,6 +13,7 @@ use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
 use App\Modules\Attendance\Services\WorkStatuses;
 use App\Modules\Platform\Services\Departments;
+use App\Modules\Platform\Services\Notifications;
 
 /**
  * Page « Agents » : une carte par agent (photo, titre, contacts, statut de
@@ -358,7 +359,7 @@ final class AgentController extends Controller
     /** Disponibilité (statut de travail) saisie par les RH ou l'administrateur (vide = retour à l'automatique). */
     public function status(int $id): void
     {
-        $emp = Database::one('SELECT id, name FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
+        $emp = Database::one('SELECT id, name, work_status, work_status_until FROM employees WHERE id = ?', [$id]) ?? $this->notFound();
         $back = $this->backUrl();
         $status = (string) $this->input('work_status', '');
         $until = (string) $this->input('work_status_until', '');
@@ -369,7 +370,8 @@ final class AgentController extends Controller
                            work_status_by = ?, work_status_at = NOW() WHERE id = ?', [Auth::id(), $id]);
             WorkStatuses::record($id, null, null, null);
             Audit::log('agent_statut', ['id' => $id, 'statut' => 'automatique']);
-            flash('success', $emp['name'] . ' : statut automatique (au bureau dès le premier badge).');
+            $sent = $emp['work_status'] !== null && $this->notifyStatus($emp, null, null, null);
+            flash('success', $emp['name'] . ' : statut automatique (au bureau dès le premier badge).' . ($sent ? ' L\'agent est prévenu.' : ''));
             $this->redirect($back);
         }
         if (!isset(AgentStatus::WORK[$status]) || $status === 'none') {
@@ -388,9 +390,32 @@ final class AgentController extends Controller
         );
         WorkStatuses::record($id, $status, $until ?: null, $note);
         Audit::log('agent_statut', ['id' => $id, 'statut' => $status, 'jusqu_au' => $until ?: null, 'note' => $note]);
+        $sent = $this->notifyStatus($emp, $status, $until ?: null, $note);
         flash('success', $emp['name'] . ' : ' . mb_strtolower(AgentStatus::WORK[$status][0])
-            . ($until ? ' jusqu\'au ' . date('d/m/Y', strtotime($until)) : '') . '.');
+            . ($until ? ' jusqu\'au ' . date('d/m/Y', strtotime($until)) : '') . '.' . ($sent ? ' L\'agent est prévenu.' : ''));
         $this->redirect($back);
+    }
+
+    /**
+     * Prévient l'agent du changement de sa disponibilité (congé, mission, télétravail,
+     * bureau, retour au statut automatique) : cloche et e-mail de son compte, ou
+     * e-mail à l'adresse de sa fiche s'il n'a pas de compte. Rien si rien ne change.
+     */
+    private function notifyStatus(array $emp, ?string $status, ?string $until, ?string $note): bool
+    {
+        if ($emp['work_status'] === $status && $emp['work_status_until'] === $until && $status !== null && $note === null) {
+            return false;
+        }
+        $period = $until ? ' jusqu\'au ' . date('d/m/Y', strtotime($until)) . ' inclus' : ($status ? ' jusqu\'à nouvel ordre' : '');
+        [$title, $text] = match ($status) {
+            null     => ['Votre disponibilité : retour au bureau', 'Votre statut est de nouveau automatique : vous êtes compté « au bureau » dès votre premier badge.'],
+            'conge'  => ['Vous êtes en congé' . $period, 'Votre congé a été enregistré' . $period . '.'],
+            default  => ['Votre disponibilité : ' . mb_strtolower(AgentStatus::WORK[$status][0]) . $period,
+                         'Votre statut a été changé en « ' . AgentStatus::WORK[$status][0] . ' »' . $period . '.'],
+        };
+        $by = Auth::user()['full_name'] ?? '';
+        return Notifications::employee((int) $emp['id'], 'statut_travail', $title,
+            'Bonjour ' . $emp['name'] . ', ' . lcfirst($text) . ($note ? ' Note : ' . $note . '.' : '') . ($by !== '' ? ' (Saisi par ' . $by . '.)' : ''));
     }
 
     /** Retour à la page Agents avec les mêmes filtres (adresse locale uniquement). */

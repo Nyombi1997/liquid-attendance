@@ -1,6 +1,9 @@
 <?php
 use App\Core\Auth;
+use App\Core\Mailer;
 use App\Modules\Platform\Services\Departments;
+
+$min = Auth::passwordMinLength();
 
 // Liste des départements pour le champ « Département » (rôle Manager)
 $deptOptions = static function (?int $selected) use ($departments): string {
@@ -44,18 +47,20 @@ $fleetOptions = static function (string $selected): string {
   <div class="card card-flat"><strong><?= fa('fa-solid fa-people-group') ?> Manager</strong><p class="muted">Page Agents, tableau de bord et présence du jour de son département uniquement.</p></div>
   <div class="card card-flat"><strong><?= fa('fa-solid fa-eye') ?> Lecteur</strong><p class="muted">Consultation et export, sans modification.</p></div>
   <div class="card card-flat"><strong><?= fa('fa-solid fa-car') ?> Employé</strong><p class="muted">Parc automobile seulement : demandes de véhicule et, pour un chauffeur, ses missions. Compte relié à une fiche employé.</p></div>
+  <div class="card card-flat"><strong><?= fa('fa-solid fa-car-side') ?> Parc automobile (flotte)</strong><p class="muted">Mêmes accès que les RH, plus la gestion du parc : véhicules et types, chauffeurs, attributions aux chauffeurs et aux départements, affectations, et validation des demandes de véhicule.</p></div>
 </div>
-<p class="muted small"><?= fa('fa-solid fa-circle-info') ?> Parc automobile : tout compte relié à une fiche employé peut demander un véhicule. Le rôle Parc automobile ajoute la validation (validateur, direction), la gestion du parc (gestionnaire) ou les missions (chauffeur). Le responsable d'un service désigné dans Départements valide les demandes de son équipe.</p>
+<p class="muted small"><?= fa('fa-solid fa-circle-info') ?> Parc automobile : tout compte relié à une fiche employé peut demander un véhicule. Le rôle Parc automobile ajoute la validation (validateur, direction), la gestion du parc (gestionnaire) ou les missions (chauffeur) ; le profil « Parc automobile (flotte) » gère le parc et valide les demandes. Le responsable d'un service désigné dans Départements valide les demandes de son équipe.</p>
 
 <section class="card table-card">
   <div class="table-scroll">
   <table class="table">
-    <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Département</th><th>Fiche employé</th><th>Parc automobile</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
+    <thead><tr><th>Nom</th><th>Identifiant</th><th>E-mail</th><th>Rôle</th><th>Département</th><th>Fiche employé</th><th>Parc automobile</th><th>Dernière connexion</th><th>État</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($users as $u): ?>
       <tr>
         <td><div class="person"><span class="avatar avatar-sm"><?= e(initials($u['full_name'])) ?></span><?= e($u['full_name']) ?></div></td>
         <td><?= e($u['username']) ?></td>
+        <td><?= $u['email'] ? e($u['email']) : '<span class="muted">—</span>' ?></td>
         <td><?= e(Auth::ROLES[$u['role']]) ?></td>
         <td><?= $u['role'] === 'manager' ? ($u['department_id'] ? e(Departments::path((int) $u['department_id'])) : '<span class="badge badge-danger">À choisir</span>') : '<span class="muted">Tous</span>' ?></td>
         <td><?= $u['employee_name'] !== null ? e($u['employee_name']) : '<span class="muted">—</span>' ?></td>
@@ -76,6 +81,8 @@ $fleetOptions = static function (string $selected): string {
     <h2>Nouveau compte</h2>
     <label class="field"><span>Nom complet</span><input name="full_name" value="<?= e(old('full_name')) ?>" required></label>
     <label class="field"><span>Identifiant</span><input name="username" value="<?= e(old('username')) ?>" pattern="[a-zA-Z0-9._\-]{3,60}" autocapitalize="none" spellcheck="false" required><small class="hint">Sans distinction de majuscules : enregistré en minuscules.</small></label>
+    <label class="field"><span>Adresse e-mail (facultative)</span><input type="email" name="email" value="<?= e(old('email')) ?>" maxlength="150" autocapitalize="none" spellcheck="false">
+      <small class="hint"><?= Mailer::configured() ? 'Un e-mail de bienvenue (identifiant et adresse de connexion, sans le mot de passe) lui sera envoyé. Sans adresse : celle de la fiche employé.' : 'E-mails désactivés (SMTP non configuré) : l\'adresse servira dès sa configuration.' ?></small></label>
     <label class="field"><span>Rôle</span>
       <select name="role" data-role-select><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= old('role', 'lecteur') === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
     <label class="field" data-role-department><span>Département du manager</span>
@@ -84,7 +91,7 @@ $fleetOptions = static function (string $selected): string {
     <label class="field"><span>Fiche employé</span><select name="employee_id"><?= $employeeOptions((int) old('employee_id', 0) ?: null, null) ?></select>
       <small class="hint">Obligatoire pour un compte « employé », un chauffeur ou un validateur.</small></label>
     <label class="field"><span>Rôle Parc automobile</span><select name="fleet_role"><?= $fleetOptions((string) old('fleet_role', 'demandeur')) ?></select></label>
-    <label class="field"><span>Mot de passe provisoire (12 caractères minimum)</span><input type="password" name="password" minlength="12" autocomplete="new-password" required></label>
+    <label class="field"><span>Mot de passe provisoire (<?= $min ?> caractères minimum)</span><input type="password" name="password" minlength="<?= $min ?>" autocomplete="new-password" data-password-meter required></label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
       <button class="btn btn-primary" type="submit">Créer</button>
@@ -98,13 +105,15 @@ $fleetOptions = static function (string $selected): string {
     <?= csrf_field() ?>
     <h2><?= e($u['username']) ?></h2>
     <label class="field"><span>Nom complet</span><input name="full_name" value="<?= e($u['full_name']) ?>" required></label>
+    <label class="field"><span>Adresse e-mail (facultative)</span><input type="email" name="email" value="<?= e($u['email'] ?? '') ?>" maxlength="150" autocapitalize="none" spellcheck="false">
+      <small class="hint">Notifications du compte. Sans adresse : celle de la fiche employé.</small></label>
     <label class="field"><span>Rôle</span>
       <select name="role" data-role-select><?php foreach (Auth::ROLES as $k => $l): ?><option value="<?= $k ?>" <?= $u['role'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?></select></label>
     <label class="field" data-role-department><span>Département du manager</span>
       <select name="department_id"><?= $deptOptions($u['department_id'] !== null ? (int) $u['department_id'] : null) ?></select></label>
     <label class="field"><span>Fiche employé</span><select name="employee_id"><?= $employeeOptions($u['employee_id'] !== null ? (int) $u['employee_id'] : null, (int) $u['id']) ?></select></label>
     <label class="field"><span>Rôle Parc automobile</span><select name="fleet_role"><?= $fleetOptions($u['fleet_role']) ?></select></label>
-    <label class="field"><span>Nouveau mot de passe (laisser vide pour ne pas changer)</span><input type="password" name="password" minlength="12" autocomplete="new-password"></label>
+    <label class="field"><span>Nouveau mot de passe (laisser vide pour ne pas changer, <?= $min ?> caractères minimum)</span><input type="password" name="password" minlength="<?= $min ?>" autocomplete="new-password" data-password-meter></label>
     <label class="check"><input type="checkbox" name="active" value="1" <?= $u['active'] ? 'checked' : '' ?>> Compte actif</label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>

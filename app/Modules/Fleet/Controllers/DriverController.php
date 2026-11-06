@@ -7,12 +7,15 @@ use App\Core\Audit;
 use App\Core\Controller;
 use App\Core\Database;
 use App\Modules\Fleet\Services\Fleet;
+use App\Modules\Fleet\Services\FleetNotify;
 
 /**
  * Référentiel des chauffeurs : un chauffeur est un employé (table employees),
  * avec son permis (numéro, catégories, expiration avec alerte) et ses
- * véhicules autorisés (aucun coché : tous). Pour voir ses missions sur son
- * téléphone, il lui faut un compte relié à sa fiche, avec le rôle « Chauffeur ».
+ * véhicules attribués (aucun coché : tous). Toute nouvelle attribution prévient
+ * le chauffeur (cloche et e-mail, ou e-mail à l'adresse de sa fiche sans compte).
+ * Pour voir ses missions sur son téléphone, il lui faut un compte relié à sa
+ * fiche, avec le rôle « Chauffeur ».
  */
 final class DriverController extends Controller
 {
@@ -52,9 +55,10 @@ final class DriverController extends Controller
             'INSERT INTO fleet_drivers (employee_id, license_number, license_category, license_expires, notes) VALUES (?, ?, ?, ?, ?)',
             [$employee, $data['license_number'], $data['license_category'], $data['license_expires'], $data['notes']]
         );
-        $this->saveVehicles($id);
-        Audit::log('chauffeur_cree', ['id' => $id, 'employe' => $employee, 'permis_expire' => $data['license_expires']]);
-        flash('success', $name . ' ajouté aux chauffeurs.');
+        $added = $this->saveVehicles($id);
+        Audit::log('chauffeur_cree', ['id' => $id, 'employe' => $employee, 'permis_expire' => $data['license_expires'], 'vehicules' => $added]);
+        FleetNotify::vehiclesAssigned($id, $added);
+        flash('success', $name . ' ajouté aux chauffeurs.' . ($added ? ' Le chauffeur est prévenu des véhicules attribués.' : ''));
         $this->redirect('/flotte/chauffeurs');
     }
 
@@ -69,21 +73,30 @@ final class DriverController extends Controller
                     license_alerted_at = IF(license_expires <=> ?, license_alerted_at, NULL) WHERE id = ?',
             [$data['license_number'], $data['license_category'], $data['license_expires'], $data['notes'], $active, $data['license_expires'], $id]
         );
-        $this->saveVehicles($id);
-        Audit::log('chauffeur_modifie', ['id' => $id, 'permis_expire' => $data['license_expires'], 'actif' => $active]);
-        flash('success', 'Chauffeur ' . $driver['name'] . ' enregistré.');
+        $added = $this->saveVehicles($id);
+        Audit::log('chauffeur_modifie', ['id' => $id, 'permis_expire' => $data['license_expires'], 'actif' => $active, 'vehicules_ajoutes' => $added]);
+        FleetNotify::vehiclesAssigned($id, $added);
+        flash('success', 'Chauffeur ' . $driver['name'] . ' enregistré.' . ($added ? ' Le chauffeur est prévenu des véhicules attribués.' : ''));
         $this->redirect('/flotte/chauffeurs');
     }
 
-    /** Véhicules autorisés (cases cochées ; aucune : tous les véhicules). */
-    private function saveVehicles(int $driverId): void
+    /**
+     * Véhicules attribués (cases cochées ; aucune : tous les véhicules).
+     * @return int[] véhicules nouvellement attribués (à notifier)
+     */
+    private function saveVehicles(int $driverId): array
     {
         $ids = array_unique(array_filter(array_map('intval', (array) ($_POST['vehicle_ids'] ?? []))));
+        $before = array_map('intval', array_column(Database::all('SELECT vehicle_id FROM fleet_driver_vehicles WHERE driver_id = ?', [$driverId]), 'vehicle_id'));
         Database::run('DELETE FROM fleet_driver_vehicles WHERE driver_id = ?', [$driverId]);
+        $added = [];
         foreach ($ids as $vid) {
-            Database::run('INSERT IGNORE INTO fleet_driver_vehicles (driver_id, vehicle_id)
-                           SELECT ?, id FROM fleet_vehicles WHERE id = ?', [$driverId, $vid]);
+            if (Database::run('INSERT IGNORE INTO fleet_driver_vehicles (driver_id, vehicle_id)
+                               SELECT ?, id FROM fleet_vehicles WHERE id = ?', [$driverId, $vid]) === 1 && !in_array($vid, $before, true)) {
+                $added[] = $vid;
+            }
         }
+        return $added;
     }
 
     /** @return array{license_number:?string, license_category:?string, license_expires:?string, notes:?string} */

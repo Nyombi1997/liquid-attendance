@@ -101,7 +101,7 @@ $km = static fn(?int $v) => $v !== null ? number_format($v, 0, ',', ' ') . ' km'
       <dt>Retour</dt><dd><?= e(date_fr(substr($r['return_at'], 0, 10))) ?> à <?= e(substr($r['return_at'], 11, 5)) ?></dd>
       <dt>Passagers</dt><dd><?= (int) $r['passengers'] ?></dd>
       <dt>Chauffeur</dt><dd><?= (int) $r['with_driver'] ? 'Avec chauffeur' . ($r['preferred_driver_name'] ? ' (souhaité : ' . e($r['preferred_driver_name']) . ')' : '') : 'Le demandeur conduit' ?></dd>
-      <dt>Véhicule souhaité</dt><dd><?= e(FleetWorkflow::VEHICLE_TYPES[$r['vehicle_type']] ?? 'Indifférent') ?></dd>
+      <dt>Véhicule souhaité</dt><dd><?= e(Fleet::vehicleTypeLabel($r['vehicle_type'], 'Indifférent')) ?></dd>
       <?php if ((int) $r['urgent']): ?><dt>Urgence</dt><dd><?= e($r['urgent_reason']) ?></dd><?php endif; ?>
       <dt>Ordre de mission</dt><dd><?= $r['order_stored_name'] ? '<a href="/flotte/demandes/' . (int) $r['id'] . '/ordre">' . fa($r['order_mime'] === 'application/pdf' ? 'fa-regular fa-file-pdf' : 'fa-regular fa-file-image') . ' ' . e($r['order_file_name']) . '</a> <small class="muted">' . e(FleetFiles::sizeLabel((int) $r['order_size'])) . '</small>' : '<span class="muted">aucun</span>' ?></dd>
     </dl>

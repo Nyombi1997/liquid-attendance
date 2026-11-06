@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <h1>Demandes à valider</h1>
-    <p class="muted">Demandes de véhicule qui attendent votre accord<?= (App\Core\Auth::user()['fleet_role'] ?? '') === 'direction' ? ' (N+1 ou direction)' : ' (N+1)' ?>. Un refus doit être motivé ; le demandeur est prévenu.</p>
+    <p class="muted">Demandes de véhicule qui attendent votre accord<?= App\Core\Auth::isFleetDirection() ? ' (N+1 ou direction)' : ' (N+1)' ?>. Un refus doit être motivé ; le demandeur est prévenu.</p>
   </div>
 </div>
 

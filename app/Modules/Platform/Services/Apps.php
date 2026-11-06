@@ -50,10 +50,11 @@ final class Apps
                 'name'  => 'Employés',
                 'icon'  => 'fa-solid fa-users',
                 'color' => 'employes',
-                'paths' => ['/employes', '/departements'],
+                'paths' => ['/employes', '/departements', '/provinces'],
                 'menu'  => [
                     ['Employés', '/employes', 'staff', ['/employes']],
                     ['Départements', '/departements', 'manage', ['/departements']],
+                    ['Provinces', '/provinces', 'admin', ['/provinces']],
                 ],
             ],
             'flotte' => [
@@ -73,6 +74,7 @@ final class Apps
                     ['Véhicules', '/flotte/vehicules', 'fleet_board', ['/flotte/vehicules', '/flotte/documents']],
                     ['Chauffeurs', '/flotte/chauffeurs', 'fleet_board', ['/flotte/chauffeurs']],
                     ['Configuration', [
+                        ['Types de véhicule', '/flotte/types', 'fleet_manage', ['/flotte/types']],
                         ['Import CSV', '/flotte/import', 'fleet_manage', ['/flotte/import']],
                         ['Paramètres', '/flotte/parametres', 'admin', ['/flotte/parametres']],
                     ]],

@@ -22,15 +22,18 @@ CREATE TABLE departments (
   CONSTRAINT fk_dept_parent FOREIGN KEY (parent_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- role       : droits de la plateforme (employe : module Parc automobile seulement)
+-- role       : droits de la plateforme (employe : module Parc automobile seulement ;
+--              fleet : profil Parc automobile, accès des RH + gestion du parc et validation)
+-- email      : adresse du compte (sinon : celle de la fiche employé reliée)
 -- employee_id: fiche employé du titulaire du compte (demandes de véhicule, chauffeur, N+1)
 -- fleet_role : rôle dans le module Parc automobile
 CREATE TABLE users (
   id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username      VARCHAR(60)  COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE COMMENT 'en minuscules, comparé sans tenir compte de la casse',
   full_name     VARCHAR(120) NOT NULL,
+  email         VARCHAR(150) NULL COMMENT 'adresse du compte (sinon : celle de la fiche employé)',
   password_hash VARCHAR(255) NOT NULL,
-  role          ENUM('admin','rh','ceo','manager','lecteur','employe') NOT NULL DEFAULT 'lecteur',
+  role          ENUM('admin','rh','ceo','manager','lecteur','employe','fleet') NOT NULL DEFAULT 'lecteur',
   department_id INT UNSIGNED NULL COMMENT 'département du manager',
   employee_id   INT UNSIGNED NULL COMMENT 'fiche employé du titulaire du compte',
   fleet_role    ENUM('demandeur','validateur','gestionnaire','chauffeur','direction') NOT NULL DEFAULT 'demandeur'
@@ -63,6 +66,15 @@ CREATE TABLE audit_log (
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Provinces (créées par l'administrateur) : province de rattachement d'un
+-- employé, assignée par les RH ou l'administrateur (« Mission hors de … »).
+CREATE TABLE provinces (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(80) NOT NULL UNIQUE,
+  active     TINYINT(1)  NOT NULL DEFAULT 1,
+  created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
 -- Groupes d'agents (utilisés pour les horaires, et plus tard les congés)
 CREATE TABLE employee_groups (
   id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -89,6 +101,7 @@ CREATE TABLE employees (
   phone             VARCHAR(40)  NULL,
   group_id          INT UNSIGNED NULL,
   department_id     INT UNSIGNED NULL,
+  province_id       INT UNSIGNED NULL COMMENT 'province de rattachement (missions hors province)',
   photo_updated_at  DATETIME     NULL,
   work_status       ENUM('bureau','teletravail','mission','conge') NULL,
   work_status_until DATE         NULL COMMENT 'fin du statut saisi (incluse), NULL = sans fin',
@@ -101,6 +114,7 @@ CREATE TABLE employees (
   KEY idx_emp_name (name),
   CONSTRAINT fk_emp_group FOREIGN KEY (group_id) REFERENCES employee_groups(id) ON DELETE SET NULL,
   CONSTRAINT fk_emp_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+  CONSTRAINT fk_emp_province FOREIGN KEY (province_id) REFERENCES provinces(id) ON DELETE SET NULL,
   CONSTRAINT fk_emp_status_by FOREIGN KEY (work_status_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
@@ -269,10 +283,38 @@ CREATE TABLE notifications (
   CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- E-mails adressés directement à une adresse (employé sans compte :
+-- changement de disponibilité, véhicule attribué), envoyés par le worker.
+CREATE TABLE mail_outbox (
+  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  to_email   VARCHAR(150) NOT NULL,
+  subject    VARCHAR(160) NOT NULL,
+  body       TEXT         NOT NULL,
+  status     ENUM('en_attente','envoye','echec') NOT NULL DEFAULT 'en_attente',
+  attempts   TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  error      VARCHAR(255) NULL,
+  sent_at    DATETIME     NULL,
+  created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_outbox_status (status, id)
+) ENGINE=InnoDB;
+
 -- ---------------------------------------------------------------------------
 -- Référentiels du parc
 -- ---------------------------------------------------------------------------
 
+-- Types de véhicule (gérés dans Parc automobile › Types de véhicule)
+CREATE TABLE fleet_vehicle_types (
+  code       VARCHAR(20) NOT NULL PRIMARY KEY,
+  label      VARCHAR(60) NOT NULL,
+  active     TINYINT(1)  NOT NULL DEFAULT 1,
+  created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT INTO fleet_vehicle_types (code, label) VALUES
+  ('berline', 'Berline'), ('suv', '4x4 / SUV'), ('pickup', 'Pick-up'),
+  ('minibus', 'Minibus'), ('camion', 'Camion'), ('moto', 'Moto');
+
+-- department_id : département auquel le véhicule est attribué (facultatif)
 -- tracker_id et ref_consumption : utilisés plus tard par le suivi GPS et le carburant
 CREATE TABLE fleet_vehicles (
   id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -280,19 +322,21 @@ CREATE TABLE fleet_vehicles (
   brand           VARCHAR(60)  NOT NULL,
   model           VARCHAR(60)  NOT NULL,
   year            SMALLINT UNSIGNED NULL,
-  vehicle_type    ENUM('berline','suv','pickup','minibus','camion','moto') NOT NULL DEFAULT 'berline',
+  vehicle_type    VARCHAR(20)  NOT NULL DEFAULT 'berline' COMMENT 'code de fleet_vehicle_types',
   seats           TINYINT UNSIGNED NOT NULL DEFAULT 5 COMMENT 'places, chauffeur compris',
   fuel_type       ENUM('essence','diesel','hybride','electrique') NOT NULL DEFAULT 'diesel',
   tank_liters     DECIMAL(6,1) NULL COMMENT 'capacité du réservoir',
   ref_consumption DECIMAL(5,2) NULL COMMENT 'consommation de référence, L/100 km',
   odometer_km     INT UNSIGNED NULL COMMENT 'dernier kilométrage connu (clôture de mission)',
   status          ENUM('disponible','en_mission','en_panne','en_entretien') NOT NULL DEFAULT 'disponible',
+  department_id   INT UNSIGNED NULL COMMENT 'département auquel le véhicule est attribué',
   tracker_id      VARCHAR(60)  NULL COMMENT 'identifiant du tracker GPS (module 2)',
   notes           VARCHAR(255) NULL,
   active          TINYINT(1)   NOT NULL DEFAULT 1,
   created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_vehicle_status (active, status)
+  KEY idx_vehicle_status (active, status),
+  CONSTRAINT fk_vehicle_dept FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 -- Documents d'un véhicule ; le plus récent de chaque type fait foi.

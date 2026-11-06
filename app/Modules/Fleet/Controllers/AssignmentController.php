@@ -12,6 +12,7 @@ use App\Modules\Fleet\Services\Fleet;
 use App\Modules\Fleet\Services\FleetNotify;
 use App\Modules\Fleet\Services\FleetWorkflow;
 use App\Modules\Fleet\Services\Timeline;
+use App\Modules\Platform\Services\Departments;
 use DomainException;
 
 /**
@@ -36,15 +37,19 @@ final class AssignmentController extends Controller
         $slot = Timeline::span($req['depart_at'], $req['return_at'], $from, $to);
 
         $vehicles = [];
-        foreach (Database::all('SELECT * FROM fleet_vehicles WHERE active = 1 ORDER BY plate') as $v) {
+        $reqDept = $req['department_id'] !== null ? (int) $req['department_id'] : null;
+        foreach (Database::all('SELECT v.*, dp.name department_name FROM fleet_vehicles v LEFT JOIN departments dp ON dp.id = v.department_id
+                                 WHERE v.active = 1 ORDER BY v.plate') as $v) {
+            // Véhicule attribué au département du demandeur (ou à un département parent) : proposé en premier
+            $v['own'] = $v['department_id'] !== null && $reqDept !== null && in_array($reqDept, Departments::descendants((int) $v['department_id']), true);
             $v['issues'] = Availability::vehicleIssues($v, $req, $docs[(int) $v['id']] ?? [], $vehicleBookings[(int) $v['id']] ?? []);
             $v['blocked'] = Availability::blocking($v['issues']);
             $v['match'] = $req['vehicle_type'] === null || $req['vehicle_type'] === $v['vehicle_type'];
             $v['bars'] = $this->bars($vehicleBookings[(int) $v['id']] ?? [], $from, $to, $id, 'driver');
             $vehicles[] = $v;
         }
-        usort($vehicles, static fn($a, $b) => [$a['blocked'], !$a['match'], count($a['issues']), $a['plate']]
-            <=> [$b['blocked'], !$b['match'], count($b['issues']), $b['plate']]);
+        usort($vehicles, static fn($a, $b) => [$a['blocked'], !$a['own'], !$a['match'], count($a['issues']), $a['plate']]
+            <=> [$b['blocked'], !$b['own'], !$b['match'], count($b['issues']), $b['plate']]);
 
         $drivers = [];
         if ((int) $req['with_driver'] === 1) {

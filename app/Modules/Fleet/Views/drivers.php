@@ -30,7 +30,7 @@ $plates = array_column($vehicles, 'plate', 'id');
 <section class="card table-card">
   <div class="table-scroll">
   <table class="table">
-    <thead><tr><th>Chauffeur</th><th>Permis</th><th>Expiration</th><th>Véhicules autorisés</th><th class="num">Missions</th><th class="num">Note</th><th>Compte</th><th></th></tr></thead>
+    <thead><tr><th>Chauffeur</th><th>Permis</th><th>Expiration</th><th>Véhicules attribués</th><th class="num">Missions</th><th class="num">Note</th><th>Compte</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($drivers as $d): $auth = $authorized[(int) $d['id']] ?? []; ?>
       <tr class="<?= $d['active'] ? '' : 'is-muted' ?>">
@@ -65,7 +65,7 @@ $plates = array_column($vehicles, 'plate', 'id');
       <label class="field"><span>Catégories (ex. B,C)</span><input name="license_category" maxlength="20" autocapitalize="characters"></label>
       <label class="field"><span>Expiration du permis</span><input type="date" name="license_expires"></label>
     </div>
-    <fieldset class="field"><legend>Véhicules autorisés (aucun coché : tous)</legend><?= $vehicleChecks([]) ?></fieldset>
+    <fieldset class="field"><legend>Véhicules attribués (aucun coché : tous ; le chauffeur est prévenu par e-mail)</legend><?= $vehicleChecks([]) ?></fieldset>
     <label class="field"><span>Remarques</span><input name="notes" maxlength="255"></label>
     <div class="dialog-actions">
       <button class="btn btn-ghost" type="button" data-close>Annuler</button>
@@ -84,7 +84,7 @@ $plates = array_column($vehicles, 'plate', 'id');
       <label class="field"><span>Catégories (ex. B,C)</span><input name="license_category" value="<?= e($d['license_category']) ?>" maxlength="20" autocapitalize="characters"></label>
       <label class="field"><span>Expiration du permis</span><input type="date" name="license_expires" value="<?= e($d['license_expires']) ?>"></label>
     </div>
-    <fieldset class="field"><legend>Véhicules autorisés (aucun coché : tous)</legend><?= $vehicleChecks($authorized[(int) $d['id']] ?? []) ?></fieldset>
+    <fieldset class="field"><legend>Véhicules attribués (aucun coché : tous ; le chauffeur est prévenu par e-mail)</legend><?= $vehicleChecks($authorized[(int) $d['id']] ?? []) ?></fieldset>
     <label class="field"><span>Remarques</span><input name="notes" value="<?= e($d['notes']) ?>" maxlength="255"></label>
     <label class="check"><input type="checkbox" name="active" value="1" <?= $d['active'] ? 'checked' : '' ?>> Chauffeur actif</label>
     <div class="dialog-actions">

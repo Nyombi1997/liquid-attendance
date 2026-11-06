@@ -70,7 +70,42 @@ $moisLabel = ucfirst(substr(date_fr($month . '-01', false), strpos(date_fr($mont
       <dt>Nom sur la pointeuse</dt><dd><?= e($emp['device_name'] ?? '—') ?></dd>
       <dt>E-mail</dt><dd><?= e($emp['email'] ?? '—') ?></dd>
       <dt>Téléphone</dt><dd><?= e($emp['phone'] ?? '—') ?></dd>
+      <dt>Province</dt><dd><?= e($emp['province_name'] ?? '—') ?></dd>
     </dl>
+    <?php if (can('province')): ?>
+    <form method="post" action="/employes/<?= (int) $emp['id'] ?>/province" class="inline-form inline-form-end">
+      <?= csrf_field() ?>
+      <label class="field field-grow"><span>Province de rattachement</span>
+        <select name="province_id"><option value="0">Aucune</option>
+          <?php foreach ($provinces as $p): ?><option value="<?= (int) $p['id'] ?>" <?= (int) $emp['province_id'] === (int) $p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option><?php endforeach; ?>
+        </select></label>
+      <button class="btn btn-outline btn-sm" type="submit">Enregistrer</button>
+    </form>
+    <?php if (!$provinces && can('admin')): ?><p class="muted small">Aucune province : <a href="/provinces">les créer</a>.</p><?php endif; ?>
+    <?php endif; ?>
+    <?php if (can('manage')): ?>
+    <div class="card-head"><h2>Compte utilisateur</h2></div>
+    <?php if ($account): ?>
+      <form method="post" action="/employes/<?= (int) $emp['id'] ?>/compte" class="inline-form inline-form-end" data-confirm="Détacher le compte « <?= e($account['username']) ?> » de cette fiche ?">
+        <?= csrf_field() ?>
+        <p class="list-main"><?= fa('fa-solid fa-link muted') ?> <strong><?= e($account['username']) ?></strong>
+          <span class="muted">· <?= e(App\Core\Auth::ROLES[$account['role']] ?? $account['role']) ?><?= $account['active'] ? '' : ' · désactivé' ?></span></p>
+        <button class="btn btn-danger-ghost btn-sm" type="submit" name="detach" value="1"><?= fa('fa-solid fa-link-slash') ?> Détacher</button>
+      </form>
+    <?php elseif ($freeAccounts): ?>
+      <form method="post" action="/employes/<?= (int) $emp['id'] ?>/compte" class="inline-form inline-form-end">
+        <?= csrf_field() ?>
+        <label class="field field-grow"><span>Relier un compte existant</span>
+          <select name="user_id" required><option value="">Choisir un compte…</option>
+            <?php foreach ($freeAccounts as $u): ?><option value="<?= (int) $u['id'] ?>"><?= e($u['full_name']) ?> (<?= e($u['username']) ?>)</option><?php endforeach; ?>
+          </select></label>
+        <button class="btn btn-primary btn-sm" type="submit"><?= fa('fa-solid fa-link') ?> Relier</button>
+      </form>
+      <p class="muted small">Le compte utilise alors cette fiche (demandes de véhicule, chauffeur, N+1, e-mail). Nouveau compte : <a href="/utilisateurs">Utilisateurs</a>.</p>
+    <?php else: ?>
+      <p class="muted small">Aucun compte relié, et aucun compte libre. <a href="/utilisateurs">Créer un compte</a>.</p>
+    <?php endif; ?>
+    <?php endif; ?>
     <div class="card-head"><h2>Accès aux salles récents</h2></div>
     <ul class="list">
       <?php foreach ($access as $a): ?>

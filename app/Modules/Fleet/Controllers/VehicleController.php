@@ -8,12 +8,14 @@ use App\Core\Controller;
 use App\Core\Database;
 use App\Modules\Fleet\Services\Fleet;
 use App\Modules\Fleet\Services\FleetFiles;
-use App\Modules\Fleet\Services\FleetWorkflow;
+use App\Modules\Fleet\Services\FleetNotify;
+use App\Modules\Platform\Services\Departments;
 
 /**
  * Référentiel des véhicules : liste, fiche, documents (assurance, contrôle
- * technique, avec alerte avant expiration). Consultation : fleet_board ;
- * modification : fleet_manage (gestionnaire de flotte, administrateur).
+ * technique, avec alerte avant expiration), département attribué et chauffeurs
+ * attitrés (prévenus par e-mail). Consultation : fleet_board ; modification :
+ * fleet_manage (gestionnaire de flotte, profil Parc automobile, administrateur).
  */
 final class VehicleController extends Controller
 {
@@ -22,8 +24,9 @@ final class VehicleController extends Controller
         $status = (string) $this->input('statut', '');
         $status = isset(Fleet::VEHICLE_STATUSES[$status]) ? $status : '';
         $vehicles = Database::all(
-            "SELECT v.*, (SELECT r.reference FROM fleet_requests r WHERE r.vehicle_id = v.id AND r.status = 'en_cours' LIMIT 1) mission_ref
-               FROM fleet_vehicles v WHERE v.active = 1 AND (? = '' OR v.status = ?) ORDER BY v.plate",
+            "SELECT v.*, dp.name department_name,
+                    (SELECT r.reference FROM fleet_requests r WHERE r.vehicle_id = v.id AND r.status = 'en_cours' LIMIT 1) mission_ref
+               FROM fleet_vehicles v LEFT JOIN departments dp ON dp.id = v.department_id WHERE v.active = 1 AND (? = '' OR v.status = ?) ORDER BY v.plate",
             [$status, $status]
         );
         $counts = array_fill_keys(array_keys(Fleet::VEHICLE_STATUSES), 0);
@@ -62,7 +65,40 @@ final class VehicleController extends Controller
                    LEFT JOIN fleet_drivers dr ON dr.id = m.driver_id LEFT JOIN employees de ON de.id = dr.employee_id
                   WHERE m.vehicle_id = ? ORDER BY m.started_at DESC LIMIT 20", [$id]),
             'alertDays' => (int) Fleet::settings()['fleet_doc_alert_days'],
+            'department'=> $vehicle['department_id'] !== null ? Departments::path((int) $vehicle['department_id']) : null,
+            'drivers'   => Fleet::drivers(),
+            'assigned'  => array_map('intval', array_column(Database::all('SELECT driver_id FROM fleet_driver_vehicles WHERE vehicle_id = ?', [$id]), 'driver_id')),
         ]);
+    }
+
+    /**
+     * Chauffeurs attitrés du véhicule (fiche véhicule). Un chauffeur sans aucun
+     * véhicule attribué peut conduire tous les véhicules ; en lui attribuant
+     * celui-ci, il ne conduit plus que ses véhicules attribués. Les chauffeurs
+     * nouvellement attribués sont prévenus (cloche et e-mail).
+     */
+    public function drivers(int $id): void
+    {
+        $vehicle = Database::one('SELECT id, plate FROM fleet_vehicles WHERE id = ?', [$id]) ?? $this->notFound();
+        $ids = array_unique(array_filter(array_map('intval', (array) ($_POST['driver_ids'] ?? []))));
+        $before = array_map('intval', array_column(Database::all('SELECT driver_id FROM fleet_driver_vehicles WHERE vehicle_id = ?', [$id]), 'driver_id'));
+        $added = [];
+        $pdo = Database::pdo();
+        $pdo->beginTransaction();
+        Database::run('DELETE FROM fleet_driver_vehicles WHERE vehicle_id = ?' . ($ids ? ' AND driver_id NOT IN (' . implode(',', $ids) . ')' : ''), [$id]);
+        foreach ($ids as $driverId) {
+            if (!in_array($driverId, $before, true)
+                && Database::run('INSERT IGNORE INTO fleet_driver_vehicles (driver_id, vehicle_id) SELECT id, ? FROM fleet_drivers WHERE id = ?', [$id, $driverId]) === 1) {
+                $added[] = $driverId;
+            }
+        }
+        $pdo->commit();
+        Audit::log('vehicule_chauffeurs', ['vehicule' => $id, 'immatriculation' => $vehicle['plate'], 'chauffeurs' => $ids, 'ajoutes' => $added]);
+        foreach ($added as $driverId) {
+            FleetNotify::vehiclesAssigned($driverId, [$id]);
+        }
+        flash('success', 'Chauffeurs de ' . $vehicle['plate'] . ' enregistrés.' . ($added ? ' ' . count($added) . ' chauffeur(s) prévenu(s).' : ''));
+        $this->redirect('/flotte/vehicules/' . $id);
     }
 
     public function store(): void
@@ -70,9 +106,9 @@ final class VehicleController extends Controller
         $data = $this->validated(null);
         $id = Database::insert(
             'INSERT INTO fleet_vehicles (plate, brand, model, year, vehicle_type, seats, fuel_type, tank_liters, ref_consumption,
-                                         odometer_km, status, tracker_id, notes)
+                                         odometer_km, status, department_id, tracker_id, notes)
              VALUES (:plate, :brand, :model, :year, :vehicle_type, :seats, :fuel_type, :tank_liters, :ref_consumption,
-                     :odometer_km, :status, :tracker_id, :notes)',
+                     :odometer_km, :status, :department_id, :tracker_id, :notes)',
             array_diff_key($data, ['active' => 1])
         );
         Audit::log('vehicule_cree', ['id' => $id, 'immatriculation' => $data['plate']]);
@@ -92,7 +128,8 @@ final class VehicleController extends Controller
         Database::run(
             'UPDATE fleet_vehicles SET plate = :plate, brand = :brand, model = :model, year = :year, vehicle_type = :vehicle_type,
                     seats = :seats, fuel_type = :fuel_type, tank_liters = :tank_liters, ref_consumption = :ref_consumption,
-                    odometer_km = :odometer_km, status = :status, tracker_id = :tracker_id, notes = :notes, active = :active
+                    odometer_km = :odometer_km, status = :status, department_id = :department_id, tracker_id = :tracker_id,
+                    notes = :notes, active = :active
               WHERE id = :id',
             $data + ['id' => $id]
         );
@@ -164,6 +201,7 @@ final class VehicleController extends Controller
             'ref_consumption' => $num($this->input('ref_consumption'), 100),
             'odometer_km'     => $num($this->input('odometer_km'), 5_000_000),
             'status'          => (string) $this->input('status', 'disponible'),
+            'department_id'   => (int) $this->input('department_id', 0) ?: null,
             'tracker_id'      => mb_substr((string) $this->input('tracker_id', ''), 0, 60) ?: null,
             'notes'           => mb_substr((string) $this->input('notes', ''), 0, 255) ?: null,
             'active'          => $id === null || isset($_POST['active']) ? 1 : 0,
@@ -171,11 +209,12 @@ final class VehicleController extends Controller
         $error = match (true) {
             $data['plate'] === '' || $data['brand'] === '' || $data['model'] === '' => 'Immatriculation, marque et modèle sont obligatoires.',
             $data['year'] !== null && ($data['year'] < 1950 || $data['year'] > (int) date('Y') + 1) => 'Année invalide.',
-            !isset(FleetWorkflow::VEHICLE_TYPES[$data['vehicle_type']]) => 'Type de véhicule invalide.',
+            !isset(Fleet::vehicleTypes()[$data['vehicle_type']]) && ($id === null || $data['vehicle_type'] !== Database::value('SELECT vehicle_type FROM fleet_vehicles WHERE id = ?', [$id])) => 'Type de véhicule invalide.',
             $data['seats'] < 1 || $data['seats'] > 80 => 'Nombre de places invalide.',
             !isset(Fleet::FUEL_TYPES[$data['fuel_type']]) => 'Carburant invalide.',
             in_array(false, [$data['tank_liters'], $data['ref_consumption'], $data['odometer_km']], true) => 'Réservoir, consommation ou kilométrage invalide.',
             !isset(Fleet::VEHICLE_STATUSES[$data['status']]) => 'État invalide.',
+            $data['department_id'] !== null && !isset(Departments::all()[$data['department_id']]) => 'Département introuvable.',
             (bool) Database::value('SELECT id FROM fleet_vehicles WHERE plate = ? AND id <> ?', [$data['plate'], $id ?? 0]) => 'Cette immatriculation existe déjà.',
             default => null,
         };

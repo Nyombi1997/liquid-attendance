@@ -22,7 +22,7 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 ## Règles à respecter
 
 ### Rôles, droits et périmètre
-- Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`, `employe` (parc automobile seulement). Libellés dans `Auth::ROLES`. Rôle Parc automobile (`users.fleet_role`) : `demandeur`, `validateur`, `gestionnaire`, `chauffeur`, `direction` (`Auth::FLEET_ROLES`).
+- Rôles (`users.role`) : `admin`, `rh`, `ceo`, `manager`, `lecteur`, `employe` (parc automobile seulement), `fleet` (profil Parc automobile : droits des RH + gestion du parc + validation des demandes à l'étape « direction », via `Auth::isFleetDirection()`). Libellés dans `Auth::ROLES`. Rôle Parc automobile (`users.fleet_role`) : `demandeur`, `validateur`, `gestionnaire`, `chauffeur`, `direction` (`Auth::FLEET_ROLES`).
 - Droits vérifiés par le routeur (3e argument de `$r->get/post`) :
   - `board` : page Agents, tableau de bord, pointages (`/pointages`), `/api/direct`, `/api/notifications`, `/api/suggestions`, profil — **tous les rôles** ;
   - `presence` : présence du jour — tous sauf `rh` ;
@@ -30,7 +30,8 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
   - `calendar` : calendrier de présence — `admin`, `rh`, `manager` ;
   - `view` : autres pages de consultation (défaut des routes GET) — `admin`, `ceo`, `lecteur` ;
   - `status` : disponibilité des agents (`POST /agents/{id}/statut`) — `admin`, `rh` ;
-  - `export` : rapport Excel de la page Agents (`/agents/export`) — `admin`, `rh` ;
+  - `export` : rapport Excel de la page Agents (`/agents/export`) — `admin`, `rh`, `fleet` ;
+  - `province` : province de rattachement d'un employé (fiche, sélection multiple) — `admin`, `rh`, `fleet` ;
   - `manage` : toutes les autres modifications — `admin` seul (défaut des routes POST) ;
   - `admin` : comptes, pointeuses, journal, état du service (`/etat-du-service`), paramètres du parc automobile ;
   - `account` : profil, déconnexion, cloche (`/api/notifications`) — tous les comptes, `employe` compris ;
@@ -42,9 +43,12 @@ storage/                     fichiers déposés (photos, fleet/…) ; en product
 - Dans les vues, masquer liens et boutons que le rôle ne peut pas suivre : `can('presence')`, `can('staff')`, `can('calendar')`, `can('view')`, `can('status')`, `can('manage')`, `can('admin')`. Un manager ou un RH ne doit voir aucun lien vers une page qui lui renverrait 403.
 - Menus : applications à la manière d'Odoo, déclarées dans `app/Modules/Platform/Services/Apps.php` (nom, icône Font Awesome, couleur, préfixes d'adresse, menu). Chaque entrée : `[libellé, adresse, droit, préfixes actifs]`, groupe : `['Libellé', [entrées…]]` (menu déroulant). Ajouter une page = ajouter l'entrée avec le même droit que sa route, et son préfixe dans `paths` de l'application si besoin. `layout.php` ne fait qu'afficher.
 - Identifiants : toujours passer par `Auth::normalizeUsername()` (minuscules) avant d'enregistrer ou de comparer.
+- Mots de passe : règle unique `Auth::passwordError()` (8 caractères minimum) ; tout champ de nouveau mot de passe porte `minlength` et `data-password-meter` (jauge, app.js), la confirmation `data-password-confirm="<name du champ>"`.
+- E-mails : jamais pendant la requête. Compte → `Notifications::send()` (adresse `users.email`, sinon celle de la fiche) ; employé avec ou sans compte → `Notifications::employee()` ; simple adresse → `Notifications::mail()` (table `mail_outbox`). Tout est envoyé par `bin/fleet-tasks.php` (worker). Ne jamais mettre un mot de passe dans un e-mail ni une notification.
 - Accueil après connexion : `Apps::landing()` (grille `/applications` si le compte a plusieurs applications, sinon `Auth::home()`). `Auth::home()` reste la page par défaut (`/agents` pour `ceo` et `manager`, `/` sinon) et la première entrée de l'application Présence.
 
 ### Parc automobile (`app/Modules/Fleet`)
+- Types de véhicule : table `fleet_vehicle_types` (`Fleet::vehicleTypes()`, `Fleet::vehicleTypeLabel()`), plus de liste fixe dans le code. « Hors ville » = hors de la province du demandeur : `Fleet::homeArea()`.
 - **Règles dans les services purs** `FleetWorkflow` (circuit) et `Availability` (conflits) : les contrôleurs lisent la demande, appellent la règle, enregistrent les champs renvoyés. Toute nouvelle règle y va, avec son test dans `tests/FleetWorkflowTest.php`. Pas de règle métier en JavaScript.
 - **Import CSV** (`/flotte/import`, `ImportController`) : lecture et analyse dans le service pur `FleetImport` (testé par `tests/FleetImportTest.php`) ; le fichier lu est gardé en session, rien n'est écrit avant la confirmation ; à la confirmation, nouvelle analyse sous verrou (`FOR UPDATE`) dans la transaction, enregistrement seulement si l'empreinte (`FleetImport::fingerprint()`) est celle de l'aperçu. Une nouvelle colonne importable se déclare dans `FleetImport::KINDS` (en-tête du modèle et autres noms acceptés).
 - **Transitions** d'une demande dans une transaction, ligne verrouillée (`SELECT … FOR UPDATE`, voir `RequestController::transition()`) ; affectation : verrous demande → véhicule → chauffeur, dans cet ordre, contrôles refaits sous verrou.

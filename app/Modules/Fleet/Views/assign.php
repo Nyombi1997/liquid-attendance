@@ -17,9 +17,10 @@ $plates = array_column($vehicles, 'plate', 'id');
 $vehicleRows = array_map(static fn(array $v) => [
     'label'   => '<label class="tl-pick"><input type="radio" name="vehicle_id" value="' . (int) $v['id'] . '"'
         . ((int) $r['vehicle_id'] === (int) $v['id'] ? ' checked' : '') . ($v['blocked'] || !$can ? ' disabled' : '') . ' required>'
-        . '<span class="list-main"><strong>' . e($v['plate']) . '</strong><small>' . e($v['brand'] . ' ' . $v['model'])
-        . ' · ' . e(FleetWorkflow::VEHICLE_TYPES[$v['vehicle_type']] ?? '') . ' · ' . (int) $v['seats'] . ' pl.'
-        . ($v['match'] ? '' : ' · <em>autre type que demandé</em>') . '</small>' . $issuesHtml($v['issues']) . '</span></label>',
+        . '<span class="list-main"><strong>' . e($v['plate']) . ($v['own'] ? ' <span class="tag">son département</span>' : '') . '</strong><small>' . e($v['brand'] . ' ' . $v['model'])
+        . ' · ' . e(Fleet::vehicleTypeLabel($v['vehicle_type'])) . ' · ' . (int) $v['seats'] . ' pl.'
+        . ($v['match'] ? '' : ' · <em>autre type que demandé</em>')
+        . ($v['department_name'] !== null && !$v['own'] ? ' · véhicule de ' . e($v['department_name']) : '') . '</small>' . $issuesHtml($v['issues']) . '</span></label>',
     'blocked' => $v['blocked'],
     'slot'    => $slot,
     'bars'    => $v['bars'],
@@ -41,7 +42,7 @@ $driverRows = array_map(static fn(array $d) => [
     <p class="muted"><a href="/flotte/demandes/<?= (int) $r['id'] ?>"><?= fa('fa-solid fa-arrow-left') ?> Demande <?= e($r['reference']) ?></a></p>
     <h1>Affecter un véhicule<?= (int) $r['with_driver'] ? ' et un chauffeur' : '' ?> <?= Fleet::badge($r) ?></h1>
     <p class="muted"><?= e($r['requester_name']) ?> · <?= e($r['destination']) ?> · <strong><?= e(Fleet::when($r['depart_at'])) ?> → <?= e(Fleet::when($r['return_at'])) ?></strong>
-      · <?= (int) $r['passengers'] ?> passager(s) · <?= e(FleetWorkflow::VEHICLE_TYPES[$r['vehicle_type']] ?? 'type indifférent') ?>
+      · <?= (int) $r['passengers'] ?> passager(s) · <?= e(Fleet::vehicleTypeLabel($r['vehicle_type'], 'type indifférent')) ?>
       <?= (int) $r['with_driver'] ? ($r['preferred_driver_name'] ? ' · chauffeur souhaité : ' . e($r['preferred_driver_name']) : '') : ' · <strong>le demandeur conduit</strong>' ?></p>
   </div>
 </div>

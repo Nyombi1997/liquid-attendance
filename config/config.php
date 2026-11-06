@@ -20,17 +20,29 @@ return [
     'storage_path' => $env('STORAGE_PATH', dirname(__DIR__) . '/storage'),
     // Cookie de session réservé au HTTPS (désactivable pour un test local en HTTP)
     'session_secure' => $env('SESSION_SECURE', '1') !== '0',
-    // E-mails des notifications (Parc automobile), envoyés par le worker.
+    // E-mails (notifications, comptes, disponibilités), envoyés par le worker.
     // Sans SMTP_HOST ni SMTP_FROM : aucun envoi, notifications dans l'application seulement.
+    // Noms acceptés aussi : SMTP_PASS, MAIL_FROM, MAIL_NAME ; SMTP_SECURE=true équivaut
+    // à ssl sur le port 465 et à tls sur les autres ports.
     'mail' => [
         'host'      => $env('SMTP_HOST', ''),
         'port'      => (int) $env('SMTP_PORT', '587'),
-        'secure'    => $env('SMTP_SECURE', 'tls'),   // tls (STARTTLS), ssl (port 465) ou none
+        'secure'    => (static function (string $v, string $port): string {
+            $v = strtolower(trim($v));
+            return match ($v) {
+                'ssl', 'smtps'               => 'ssl',
+                'none', 'false', '0', 'off'  => 'none',
+                'true', '1', 'on', 'yes'     => $port === '465' ? 'ssl' : 'tls',
+                default                      => 'tls',
+            };
+        })($env('SMTP_SECURE', 'tls'), $env('SMTP_PORT', '587')),   // tls (STARTTLS), ssl (port 465) ou none
         'user'      => $env('SMTP_USER', ''),
-        'password'  => $env('SMTP_PASSWORD', ''),
-        'from'      => $env('SMTP_FROM', ''),
-        'from_name' => $env('SMTP_FROM_NAME', $env('APP_NAME', 'Liquid Présence')),
+        'password'  => $env('SMTP_PASSWORD', $env('SMTP_PASS', '')),
+        'from'      => $env('SMTP_FROM', $env('MAIL_FROM', '')),
+        'from_name' => $env('SMTP_FROM_NAME', $env('MAIL_NAME', $env('APP_NAME', 'Liquid Présence'))),
     ],
+    // Mot de passe des comptes : longueur minimale
+    'password_min_length' => 8,
     // Connexion : 5 échecs en 15 minutes bloquent le couple identifiant/IP
     'login_max_attempts'  => 5,
     'login_window_minutes'=> 15,

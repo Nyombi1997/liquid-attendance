@@ -1,16 +1,11 @@
 <?php
 use App\Modules\Fleet\Services\FleetFiles;
-use App\Modules\Fleet\Services\FleetWorkflow;
 
 $s = $settings;
-$rules = array_filter([
-    $s['fleet_direction_out_of_town'] === '1' ? 'mission hors de ' . $s['fleet_city'] : null,
-    (int) $s['fleet_direction_max_days'] > 0 ? 'plus de ' . (int) $s['fleet_direction_max_days'] . ' jours' : null,
-    $s['fleet_direction_weekend'] === '1' ? 'week-end' : null,
-]);
+// « Hors de … » : province de rattachement du demandeur (à défaut, ville des paramètres)
 $orderHint = match ($s['fleet_order_required']) {
     'toujours'   => 'Obligatoire.',
-    'hors_ville' => 'Obligatoire pour une mission hors de ' . $s['fleet_city'] . '.',
+    'hors_ville' => 'Obligatoire pour une mission hors de ' . $area . '.',
     default      => 'Facultatif.',
 };
 $withDriver = (string) old('with_driver', '1');
@@ -30,20 +25,16 @@ $tomorrow = date('Y-m-d', strtotime('+1 day'));
 <section class="card card-narrow">
   <form method="post" action="/flotte/demandes" enctype="multipart/form-data" class="stack" data-request-form>
     <?= csrf_field() ?>
-    <p class="callout"><?= fa('fa-solid fa-route') ?>
-      Validation par <?= $n1 ? '<strong>' . e($n1['name']) . '</strong> (N+1)' . ($n1['user_id'] ? '' : ' — <em>sans compte : la demande ira à la direction</em>') : 'la direction (aucun N+1 désigné pour votre service)' ?><?php if ($rules): ?>,
-      puis par la direction si : <?= e(implode(', ', $rules)) ?><?php endif; ?>.</p>
-
     <label class="field"><span>Motif de la mission</span><input name="purpose" value="<?= e(old('purpose')) ?>" maxlength="255" required placeholder="Ex. : réunion avec le client, livraison de matériel…"></label>
     <label class="field"><span>Destination</span><input name="destination" value="<?= e(old('destination')) ?>" maxlength="160" required placeholder="Adresse, quartier ou ville"></label>
-    <label class="check"><input type="checkbox" name="out_of_town" value="1" <?= old('out_of_town') ? 'checked' : '' ?>> Mission hors de <?= e($s['fleet_city']) ?></label>
+    <label class="check"><input type="checkbox" name="out_of_town" value="1" <?= old('out_of_town') ? 'checked' : '' ?>> Mission hors de <?= e($area) ?></label>
     <div class="form-grid">
       <label class="field"><span>Départ</span><input type="datetime-local" name="depart_at" value="<?= e(old('depart_at', $tomorrow . 'T08:00')) ?>" required></label>
       <label class="field"><span>Retour</span><input type="datetime-local" name="return_at" value="<?= e(old('return_at', $tomorrow . 'T17:00')) ?>" required></label>
       <label class="field"><span>Passagers (vous compris)</span><input type="number" name="passengers" value="<?= e(old('passengers', 1)) ?>" min="1" max="60" required></label>
       <label class="field"><span>Type de véhicule souhaité</span><select name="vehicle_type">
         <option value="">Indifférent</option>
-        <?php foreach (FleetWorkflow::VEHICLE_TYPES as $k => $label): ?><option value="<?= e($k) ?>" <?= old('vehicle_type') === $k ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
+        <?php foreach ($types as $k => $label): ?><option value="<?= e($k) ?>" <?= old('vehicle_type') === $k ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
       </select></label>
     </div>
     <fieldset class="field"><legend>Chauffeur</legend>

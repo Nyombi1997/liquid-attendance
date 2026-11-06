@@ -9,9 +9,10 @@
   <form method="post" action="/flotte/parametres" class="stack">
     <?= csrf_field() ?>
     <h2>Validation de la direction</h2>
-    <p class="muted small">Toute demande est validée par le N+1 du demandeur. La direction valide en plus quand l'une des conditions cochées est remplie.</p>
-    <label class="field"><span>Ville de référence</span><input name="fleet_city" value="<?= e($s['fleet_city']) ?>" maxlength="60" required></label>
-    <label class="check"><input type="checkbox" name="fleet_direction_out_of_town" value="1" <?= $s['fleet_direction_out_of_town'] === '1' ? 'checked' : '' ?>> Mission hors de la ville de référence</label>
+    <p class="muted small">Toute demande est validée par le N+1 du demandeur. La direction (rôle Parc automobile « Direction » ou profil « Parc automobile (flotte) ») valide en plus quand l'une des conditions cochées est remplie, ou directement s'il n'y a pas de N+1.</p>
+    <label class="field"><span>Lieu de référence par défaut</span><input name="fleet_city" value="<?= e($s['fleet_city']) ?>" maxlength="60" required>
+      <small class="hint">« Mission hors de … » : province de rattachement du demandeur (<a href="/provinces">Provinces</a>, assignée sur la fiche employé) ; ce lieu pour un employé sans province.</small></label>
+    <label class="check"><input type="checkbox" name="fleet_direction_out_of_town" value="1" <?= $s['fleet_direction_out_of_town'] === '1' ? 'checked' : '' ?>> Mission hors de la province du demandeur</label>
     <label class="check"><input type="checkbox" name="fleet_direction_weekend" value="1" <?= $s['fleet_direction_weekend'] === '1' ? 'checked' : '' ?>> Mission qui touche un samedi ou un dimanche</label>
     <label class="field"><span>Mission de plus de … jours (0 : pas de seuil)</span><input type="number" name="fleet_direction_max_days" value="<?= e($s['fleet_direction_max_days']) ?>" min="0" max="31" required></label>
 
@@ -25,7 +26,7 @@
     <h2>Rappels et alertes</h2>
     <label class="field"><span>Rappel avant le départ (minutes, 0 : aucun)</span><input type="number" name="fleet_reminder_minutes" value="<?= e($s['fleet_reminder_minutes']) ?>" min="0" max="1440" required></label>
     <label class="field"><span>Alerte avant l'expiration des documents et des permis (jours)</span><input type="number" name="fleet_doc_alert_days" value="<?= e($s['fleet_doc_alert_days']) ?>" min="1" max="365" required></label>
-    <p class="muted small">E-mails : envoyés par le worker si le serveur SMTP est configuré dans le fichier .env de la VM (SMTP_HOST, SMTP_FROM…) ; sinon, notifications dans l'application seulement.</p>
+    <p class="muted small">E-mails : envoyés par le worker si le serveur SMTP est configuré dans le fichier .env de la VM (SMTP_HOST, SMTP_FROM ou MAIL_FROM…) ; sinon, notifications dans l'application seulement.</p>
     <div><button class="btn btn-primary" type="submit">Enregistrer</button></div>
   </form>
 </section>

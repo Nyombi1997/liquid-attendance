@@ -782,3 +782,25 @@ a.tl-bar:hover { text-decoration: none; background: var(--primary-700); }
   .agents-layout { grid-template-columns: 1fr; }
   .card { box-shadow: none; border: 1px solid var(--border); }
 }
+
+/* Mot de passe : jauge de solidité et critères (app.js, data-password-meter) */
+.pw-meter { margin-top: 6px; }
+.pw-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pw-bar span { height: 5px; border-radius: 3px; background: var(--border); transition: background .15s; }
+.pw-meter[data-level="weak"] .pw-bar .is-on { background: var(--danger); }
+.pw-meter[data-level="fair"] .pw-bar .is-on { background: var(--warn); }
+.pw-meter[data-level="good"] .pw-bar .is-on { background: var(--primary); }
+.pw-meter[data-level="strong"] .pw-bar .is-on { background: var(--ok); }
+.pw-label { margin: 5px 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pw-meter[data-level="weak"] .pw-label { color: var(--danger); }
+.pw-meter[data-level="fair"] .pw-label { color: var(--warn); }
+.pw-meter[data-level="good"] .pw-label { color: var(--primary); }
+.pw-meter[data-level="strong"] .pw-label { color: var(--ok); }
+.pw-rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.pw-rules li.is-ok { color: var(--ok); }
+.pw-match { margin: 5px 0 0; font-size: 12px; font-weight: 600; color: var(--danger); }
+.pw-match.is-ok { color: var(--ok); }
+
+/* Fiche employé : province et compte relié (formulaire sur une ligne, bouton aligné en bas) */
+.inline-form-end { align-items: flex-end; margin: 10px 0 14px; }
+.inline-form-end .list-main { flex: 1; margin: 0; padding: 7px 0; }
