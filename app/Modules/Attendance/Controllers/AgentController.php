@@ -11,9 +11,9 @@ use App\Core\Xlsx;
 use App\Modules\Attendance\Services\AgentPhoto;
 use App\Modules\Attendance\Services\AgentStatus;
 use App\Modules\Attendance\Services\DashboardStats;
+use App\Modules\Attendance\Services\StatusNotify;
 use App\Modules\Attendance\Services\WorkStatuses;
 use App\Modules\Platform\Services\Departments;
-use App\Modules\Platform\Services\Notifications;
 
 /**
  * Page « Agents » : une carte par agent (photo, titre, contacts, statut de
@@ -397,25 +397,13 @@ final class AgentController extends Controller
     }
 
     /**
-     * Prévient l'agent du changement de sa disponibilité (congé, mission, télétravail,
-     * bureau, retour au statut automatique) : cloche et e-mail de son compte, ou
-     * e-mail à l'adresse de sa fiche s'il n'a pas de compte. Rien si rien ne change.
+     * Prévient l'agent, la personne qui fait la modification et les comptes RH du
+     * changement de disponibilité (StatusNotify). Rien si rien ne change.
+     * Renvoie vrai si l'agent a été prévenu.
      */
     private function notifyStatus(array $emp, ?string $status, ?string $until, ?string $note): bool
     {
-        if ($emp['work_status'] === $status && $emp['work_status_until'] === $until && $status !== null && $note === null) {
-            return false;
-        }
-        $period = $until ? ' jusqu\'au ' . date('d/m/Y', strtotime($until)) . ' inclus' : ($status ? ' jusqu\'à nouvel ordre' : '');
-        [$title, $text] = match ($status) {
-            null     => ['Votre disponibilité : retour au bureau', 'Votre statut est de nouveau automatique : vous êtes compté « au bureau » dès votre premier badge.'],
-            'conge'  => ['Vous êtes en congé' . $period, 'Votre congé a été enregistré' . $period . '.'],
-            default  => ['Votre disponibilité : ' . mb_strtolower(AgentStatus::WORK[$status][0]) . $period,
-                         'Votre statut a été changé en « ' . AgentStatus::WORK[$status][0] . ' »' . $period . '.'],
-        };
-        $by = Auth::user()['full_name'] ?? '';
-        return Notifications::employee((int) $emp['id'], 'statut_travail', $title,
-            'Bonjour ' . $emp['name'] . ', ' . lcfirst($text) . ($note ? ' Note : ' . $note . '.' : '') . ($by !== '' ? ' (Saisi par ' . $by . '.)' : ''));
+        return StatusNotify::changed($emp, $status, $until, $note, Auth::user() ?? ['id' => Auth::id()]);
     }
 
     /** Retour à la page Agents avec les mêmes filtres (adresse locale uniquement). */

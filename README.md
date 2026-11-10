@@ -378,7 +378,9 @@ openssl rand -base64 24   # à lancer deux fois : un mot de passe pour DB_PASSWO
 nano .env
 ```
 
-Pour les e-mails, renseigner aussi `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` (`tls`, `ssl` ou `none` ; `true` = `ssl` sur le port 465), `SMTP_USER`, `SMTP_PASSWORD` et `SMTP_FROM` (noms acceptés aussi : `SMTP_PASS`, `MAIL_FROM`, `MAIL_NAME`) (laisser `SMTP_HOST` vide : notifications dans l'application seulement). La VM doit pouvoir joindre ce serveur (port 587 ou 465 en sortie).
+Pour les e-mails, renseigner aussi `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` (`tls`, `ssl` ou `none` ; `true` = `ssl` sur le port 465), `SMTP_USER`, `SMTP_PASSWORD` et `SMTP_FROM` (noms acceptés aussi : `SMTP_PASS`, `MAIL_FROM`) (laisser `SMTP_HOST` vide : notifications dans l'application seulement). `MAIL_NAME` (sinon `SMTP_FROM_NAME`, sinon `APP_NAME`) est le nom de l'expéditeur, le titre affiché sous le logo et la signature de chaque e-mail. Les e-mails partent en HTML (logo Liquid intégré au message, sans lien externe) avec leur version texte.
+
+Disponibilités (page Agents) : à chaque changement, l'agent (« Bonjour <agent>, <auteur> a changé votre statut à « en congé » jusqu'au … »), la personne qui a fait la modification et tous les comptes RH (rôle `rh`) sont prévenus (cloche + e-mail) ; quand la date de fin est passée, le worker prévient les RH et l'auteur de la saisie (une fois par période, `work_statuses.end_notified_at`). La VM doit pouvoir joindre ce serveur (port 587 ou 465 en sortie).
 
 ### 2. Démarrer
 
@@ -463,6 +465,7 @@ sudo docker compose exec worker php bin/migrate.php --baseline=006 # UNE SEULE F
 | `005_flotte.sql` | Parc automobile : `departments.kind` et `head_employee_id` (N+1), rôle `employe`, `users.employee_id` et `fleet_role`, tables `notifications`, `fleet_vehicles`, `fleet_vehicle_documents`, `fleet_drivers`, `fleet_driver_vehicles`, `fleet_requests`, `fleet_request_events`, `fleet_missions`, `fleet_ratings`, paramètres `fleet_*` |
 | `006_comptes_provinces.sql` | Comptes : `users.email`, rôle `fleet` (profil Parc automobile) ; table `provinces` et `employees.province_id` ; table `fleet_vehicle_types` (types de véhicule, `vehicle_type` passé en texte), `fleet_vehicles.department_id` ; file d'e-mails `mail_outbox` |
 | `007_roles_texte.sql` | `users.role` en `VARCHAR(30)` (rôles vérifiés en PHP par `Auth::ROLES`) ; 002, 005 et 006 ne réduisent plus la liste des rôles quand on les rejoue |
+| `008_fin_statut.sql` | `work_statuses.end_notified_at` : fin d'une disponibilité saisie (congé, mission, télétravail) signalée une seule fois aux RH et à l'auteur de la saisie ; périodes déjà terminées marquées comme signalées |
 
 Les photos des agents sont enregistrées dans `./data/storage/photos` et les fichiers du parc automobile (ordres de mission, documents des véhicules, photos des compteurs) dans `./data/storage/fleet` (volume monté dans le conteneur `app`, hors du dossier public) : ils sont conservés lors des mises à jour et inclus dans la sauvegarde de `./data`.
 

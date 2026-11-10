@@ -18,6 +18,24 @@ use App\Core\Mailer;
 final class Notifications
 {
     /**
+     * Types de message rédigés comme une lettre (« Bonjour …, ») : l'e-mail
+     * n'a pas de titre au-dessus du texte (le titre reste l'objet de l'e-mail).
+     */
+    public const LETTER_KINDS = ['compte_cree', 'statut_travail', 'statut_saisi', 'statut_rh', 'statut_fin'];
+
+    /**
+     * Comptes actifs d'un rôle de la plateforme (ex. 'rh'), avec leur nom.
+     * @return array<int, string> id du compte → nom affiché
+     */
+    public static function usersWithRole(string $role): array
+    {
+        $out = [];
+        foreach (Database::all('SELECT id, full_name, username FROM users WHERE active = 1 AND role = ? ORDER BY id', [$role]) as $u) {
+            $out[(int) $u['id']] = (string) ($u['full_name'] ?: $u['username']);
+        }
+        return $out;
+    }
+    /**
      * @param array<int|null> $userIds destinataires (doublons et null ignorés)
      * @param int|null $except compte à ne pas prévenir (celui qui fait l'action)
      */
@@ -82,7 +100,7 @@ final class Notifications
             self::send([(int) $emp['user_id']], $kind, $title, $body, $url, null, $module);
             return true;
         }
-        return self::mail($emp['email'], $title, $title . "\n\n" . $body);
+        return self::mail($emp['email'], $title, in_array($kind, self::LETTER_KINDS, true) ? $body : $title . "\n\n" . $body);
     }
 
     /** Dernières notifications d'un compte. */

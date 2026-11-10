@@ -10,14 +10,16 @@ use App\Core\Database;
  * Historique des disponibilités (table work_statuses) : chaque statut saisi
  * par les RH (télétravail, mission, congé, au bureau) avec sa période.
  * employees.work_status garde le statut en cours (page Agents) ; l'historique
- * permet au calendrier d'afficher les raisons d'absence des jours passés.
+ * permet au calendrier d'afficher les raisons d'absence des jours passés et au
+ * worker de signaler la fin d'une période (StatusNotify::ended()).
  */
 final class WorkStatuses
 {
     /**
      * Nouveau statut à partir d'aujourd'hui ($status null = retour à l'automatique) :
      * les périodes en cours s'arrêtent hier, celles qui commençaient aujourd'hui
-     * ou plus tard sont remplacées.
+     * ou plus tard sont remplacées. Une période interrompue ainsi n'aura pas de
+     * message de fin (end_notified_at) : la modification elle-même est signalée.
      */
     public static function record(int $employeeId, ?string $status, ?string $until, ?string $note): void
     {
@@ -27,7 +29,8 @@ final class WorkStatuses
             [$employeeId, $today]
         );
         Database::run(
-            'UPDATE work_statuses SET date_to = ? WHERE employee_id = ? AND (date_to IS NULL OR date_to >= ?)',
+            'UPDATE work_statuses SET date_to = ?, end_notified_at = COALESCE(end_notified_at, NOW())
+              WHERE employee_id = ? AND (date_to IS NULL OR date_to >= ?)',
             [date('Y-m-d', strtotime('-1 day')), $employeeId, $today]
         );
         if ($status !== null) {

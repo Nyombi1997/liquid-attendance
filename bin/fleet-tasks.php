@@ -11,7 +11,9 @@ declare(strict_types=1);
  *   3. envoi des e-mails des notifications en attente (SMTP de .env ; sans SMTP,
  *      rien n'est envoyé), adresse du compte ou, à défaut, de sa fiche employé ;
  *   4. envoi des e-mails adressés directement à une adresse (mail_outbox :
- *      bienvenue, disponibilité d'un employé sans compte, véhicule attribué…).
+ *      bienvenue, disponibilité d'un employé sans compte, véhicule attribué…) ;
+ *   0. (Présence) fin d'une disponibilité saisie (congé, mission, télétravail) :
+ *      message aux RH et à la personne qui l'avait saisie, une fois par période.
  *   Trois essais au plus par e-mail. Toute la plateforme passe par ici : avec
  *   FLEET_TASKS_INTERVAL=0, aucun e-mail n'est envoyé.
  * Si une migration n'est pas appliquée : aucune tâche, message et code de sortie 3.
@@ -24,6 +26,7 @@ use App\Core\Config;
 use App\Core\Database;
 use App\Core\Mailer;
 use App\Core\Migrations;
+use App\Modules\Attendance\Services\StatusNotify;
 use App\Modules\Fleet\Services\Fleet;
 use App\Modules\Fleet\Services\FleetNotify;
 use App\Modules\Platform\Services\Notifications;
@@ -37,7 +40,10 @@ if (($warning = Migrations::warning()) !== null) {
 }
 
 $settings = Fleet::settings();
-$done = ['rappels' => 0, 'alertes' => 0, 'e-mails' => 0, 'échecs' => 0];
+$done = ['fins de statut' => 0, 'rappels' => 0, 'alertes' => 0, 'e-mails' => 0, 'échecs' => 0];
+
+// 0. Fin des disponibilités saisies (date de fin passée) : RH et auteur prévenus
+$done['fins de statut'] = StatusNotify::ended();
 
 // 1. Rappels avant le départ
 $minutes = (int) $settings['fleet_reminder_minutes'];
@@ -99,7 +105,7 @@ foreach (Database::all(
 
 // 3. E-mails en attente
 $pending = Database::all(
-    "SELECT n.id, n.title, n.body, n.url, n.email_attempts, COALESCE(NULLIF(u.email, ''), NULLIF(e.email, '')) email
+    "SELECT n.id, n.kind, n.title, n.body, n.url, n.email_attempts, COALESCE(NULLIF(u.email, ''), NULLIF(e.email, '')) email
        FROM notifications n JOIN users u ON u.id = n.user_id LEFT JOIN employees e ON e.id = u.employee_id
       WHERE n.email_status = 'en_attente' ORDER BY n.id LIMIT 50"
 );
@@ -111,10 +117,13 @@ if ($pending && !Mailer::configured()) {
 $mailer = new Mailer();
 $base = rtrim((string) Config::get('app_url'), '/');
 foreach ($pending as $n) {
-    $body = $n['title'] . "\n\n" . ($n['body'] ? $n['body'] . "\n\n" : '')
-        . ($n['url'] ? 'Ouvrir : ' . $base . $n['url'] . "\n\n" : '')
-        . '— ' . Config::get('app_name') . ' (message automatique, ne pas répondre)';
-    $error = $n['email'] ? $mailer->send($n['email'], $n['title'], $body) : 'adresse e-mail absente';
+    // Logo, titre MAIL_NAME et signature ajoutés par Mailer ; pas de titre au-dessus
+    // d'un message rédigé comme une lettre (« Bonjour …, »)
+    $letter = in_array($n['kind'], Notifications::LETTER_KINDS, true);
+    $error = $n['email']
+        ? $mailer->send($n['email'], $n['title'], (string) ($n['body'] ?? ''), $letter ? null : $n['title'],
+                        $n['url'] ? $base . $n['url'] : null)
+        : 'adresse e-mail absente';
     if ($error === null) {
         Database::run("UPDATE notifications SET email_status = 'envoye', emailed_at = NOW(), email_error = NULL, email_attempts = email_attempts + 1 WHERE id = ?", [$n['id']]);
         $done['e-mails']++;
@@ -134,8 +143,7 @@ if ($outbox && !Mailer::configured()) {
     $outbox = [];
 }
 foreach ($outbox as $m) {
-    $error = $mailer->send($m['to_email'], $m['subject'],
-        rtrim($m['body']) . "\n\n— " . Config::get('app_name') . ' (message automatique, ne pas répondre)');
+    $error = $mailer->send($m['to_email'], $m['subject'], $m['body']);
     if ($error === null) {
         Database::run("UPDATE mail_outbox SET status = 'envoye', sent_at = NOW(), error = NULL, attempts = attempts + 1 WHERE id = ?", [$m['id']]);
         $done['e-mails']++;

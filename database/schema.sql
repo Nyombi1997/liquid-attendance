@@ -135,6 +135,7 @@ CREATE TABLE work_statuses (
   date_to     DATE NULL COMMENT 'incluse, NULL = jusqu''à nouvel ordre',
   note        VARCHAR(255) NULL,
   created_by  INT UNSIGNED NULL,
+  end_notified_at DATETIME NULL COMMENT 'fin de période signalée aux RH (ou période interrompue par un nouveau statut)',
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_ws_emp_dates (employee_id, date_from, date_to),
   CONSTRAINT fk_ws_emp FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
@@ -545,4 +546,5 @@ INSERT INTO schema_migrations (name, mode) VALUES
   ('004_calendrier.sql', 'schema'),
   ('005_flotte.sql', 'schema'),
   ('006_comptes_provinces.sql', 'schema'),
-  ('007_roles_texte.sql', 'schema');
+  ('007_roles_texte.sql', 'schema'),
+  ('008_fin_statut.sql', 'schema');

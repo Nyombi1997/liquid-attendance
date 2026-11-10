@@ -39,7 +39,8 @@ return [
         'user'      => $env('SMTP_USER', ''),
         'password'  => $env('SMTP_PASSWORD', $env('SMTP_PASS', '')),
         'from'      => $env('SMTP_FROM', $env('MAIL_FROM', '')),
-        'from_name' => $env('SMTP_FROM_NAME', $env('MAIL_NAME', $env('APP_NAME', 'Liquid Présence'))),
+        // Nom de l'expéditeur, titre et signature des e-mails : MAIL_NAME en priorité
+        'from_name' => $env('MAIL_NAME', $env('SMTP_FROM_NAME', $env('APP_NAME', 'Liquid Présence'))),
     ],
     // Mot de passe des comptes : longueur minimale
     'password_min_length' => 8,
