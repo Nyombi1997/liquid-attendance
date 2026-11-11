@@ -436,6 +436,7 @@ Vérifier ensuite **https://41.174.155.178:8443** : plus d'avertissement, et le 
 | Recalculer une période | page Horaires > « Recalculer une période », ou `sudo docker compose exec worker php bin/compute.php --from=2026-01-01 --to=2026-10-31` |
 | Mettre à jour | procédure complète : « Déploiement : procédure à suivre », partie A (sauvegarde, `git pull --ff-only`, migrations, `up -d --build app worker`, vérifications) |
 | Réinitialiser un mot de passe admin | `sudo docker compose exec -it app php bin/create-admin.php <identifiant>` |
+| Diagnostiquer les e-mails (SMTP, file, comptes RH sans adresse, e-mail de test) | `sudo docker compose exec worker php bin/mail-test.php <adresse> [--relancer]` |
 | Arrêter la plateforme (ELK n'est pas touché) | `sudo docker compose down` |
 
 ### Appliquer une migration sur une base existante
@@ -509,7 +510,7 @@ app/
       Views/
   Core/Mailer.php          envoi SMTP sans dépendance (utilisé par le worker)
   Views/                   gabarit commun, pages d'erreur
-bin/                       compute.php (calcul), fleet-tasks.php (rappels, alertes, envoi de tous les e-mails), migrate.php (migrations), create-admin.php
+bin/                       compute.php (calcul), fleet-tasks.php (rappels, alertes, envoi de tous les e-mails), migrate.php (migrations), create-admin.php, mail-test.php (diagnostic des e-mails)
 config/config.php          configuration lue depuis .env
 database/                  schema.sql, seed.sql (chargés au premier démarrage), migrations/, seed_fleet_demo.sql (démonstration, jamais en production)
 docker/                    images app (Apache + HTTPS) et worker

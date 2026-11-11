@@ -87,6 +87,7 @@ public/manifest.webmanifest, sw.js, offline.html   PWA (cache des fichiers versi
 bin/compute.php              calcul des journées (--days, --from/--to, --employee-device-id)
 bin/fleet-tasks.php          parc automobile : rappels avant départ, alertes d'expiration, envoi des e-mails (lancé par le worker)
 bin/create-admin.php         création / réinitialisation d'un compte admin
+bin/mail-test.php            diagnostic des e-mails (SMTP, file, comptes RH sans adresse, e-mail de test, --relancer)
 bin/migrate.php              migrations de la base (table schema_migrations ; --dry-run, --check, --baseline[=NNN])
 worker/sync.py, run.sh       service de synchronisation (conteneur la-worker)
 database/schema.sql, seed.sql, migrations/NNN_*.sql, seed_fleet_demo.sql (démonstration, JAMAIS en production)

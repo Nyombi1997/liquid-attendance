@@ -48,7 +48,11 @@ final class Notifications
             return;
         }
         $emails = [];
-        if ($email && Mailer::configured()) {
+        // Mis en file dès que le compte a une adresse, même si le conteneur web
+        // ne voit pas le SMTP : c'est le worker qui décide (sans SMTP, il passe
+        // la file à « aucun »). Évite de perdre les e-mails si seul la-app n'a
+        // pas été recréé après une modification du .env.
+        if ($email) {
             foreach (Database::all(
                 'SELECT u.id FROM users u LEFT JOIN employees e ON e.id = u.employee_id
                   WHERE u.active = 1 AND COALESCE(NULLIF(u.email, \'\'), NULLIF(e.email, \'\')) IS NOT NULL
