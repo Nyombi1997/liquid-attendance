@@ -208,7 +208,10 @@ final class Mailer
 
     private function hello(): void
     {
-        $this->command('EHLO ' . (gethostname() ?: 'localhost'), 250);
+        // Nom annoncé : domaine de l'expéditeur plutôt que le nom du conteneur
+        // (identifiant hexadécimal aléatoire, mal noté par les filtres anti-spam)
+        $domain = explode('@', (string) Config::get('mail.from', ''))[1] ?? '';
+        $this->command('EHLO ' . ($domain !== '' ? $domain : (gethostname() ?: 'localhost')), 250);
     }
 
     /** @param int|int[] $expected */
